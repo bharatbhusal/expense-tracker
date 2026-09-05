@@ -32,7 +32,7 @@ import {
   ensureCategoryInBucket,
   deleteCategoriesByBucket,
 } from "@/repositories/category.repository";
-import { findUserByUsername } from "@/repositories/user.repository";
+import userRepository from "@/repositories/user.repository";
 import { logAuditEvent } from "@/services/audit.service";
 import type {
   BucketDetail,
@@ -236,7 +236,7 @@ export async function inviteUserService(
   const payload = inviteSchema.parse(body);
   const bucket = await requireOwner(userId, bucketId);
 
-  const user = await findUserByUsername(payload.username);
+  const user = await userRepository.findUserByUsername(payload.username);
   if (!user) {
     throw new AppError(USER_ERRORS.NOT_FOUND, 404, ERROR_CODES.USER_NOT_FOUND);
   }

@@ -27,7 +27,7 @@ import {
 } from "@/repositories/category.repository";
 import expenseRepository from "@/repositories/expense.repository";
 import { findBucketById } from "@/repositories/bucket.repository";
-import { findUserById } from "@/repositories/user.repository";
+import userRepository from "@/repositories/user.repository";
 import { logAuditEvent } from "@/services/audit.service";
 import { randomHexColor } from "@/lib/utils";
 import type { CategoryStatsSummary } from "@/constants/types/analytics.types";
@@ -79,7 +79,7 @@ export async function createCategoryService(userId: string, body: unknown) {
     throw new AppError(BUCKET_ERRORS.NOT_MEMBER, 403, ERROR_CODES.NOT_A_MEMBER);
   }
 
-  const existing = await findUserById(userId);
+  const existing = await userRepository.findUserById(userId);
   if (!existing) {
     throw new AppError(USER_ERRORS.DOESNT_EXIST, 409, ERROR_CODES.USER_DOESNT_EXIST);
   }
