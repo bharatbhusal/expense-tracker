@@ -16,15 +16,7 @@ import {
   categoryStatsSummarySchema,
 } from "@/lib/validators";
 import { buildCategoryQuery, buildExpenseQuery } from "@/lib/query-builders";
-import {
-  createCategory,
-  deleteCategory,
-  getCategoryByIdForMember,
-  listCategoriesWithStats,
-  listCategoryIds,
-  searchCategories,
-  updateCategory,
-} from "@/repositories/category.repository";
+import categoryRepository from "@/repositories/category.repository";
 import expenseRepository from "@/repositories/expense.repository";
 import { findBucketById } from "@/repositories/bucket.repository";
 import { findUserById } from "@/repositories/user.repository";
@@ -32,14 +24,15 @@ import { logAuditEvent } from "@/services/audit.service";
 import { randomHexColor } from "@/lib/utils";
 import type { CategoryStatsSummary } from "@/constants/types/analytics.types";
 import type { CategorySearchRequest, ExpenseFilterCriteria } from "@/constants/types/search.types";
-import { AUDIT_ACTIONS } from "@/constants/types/audit.types";
+import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "@/constants/types/audit.types";
+import type { AuthUser } from "@/constants/types/auth.types";
 
 async function assertCategoryCreator(
   userId: string,
   categoryId: string,
   validBucketIds: Types.ObjectId[],
 ) {
-  const category = await getCategoryByIdForMember(categoryId, validBucketIds);
+  const category = await categoryRepository.getCategoryByIdForMember(categoryId, validBucketIds);
   if (!category) {
     throw new AppError(CATEGORY_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
@@ -49,7 +42,7 @@ async function assertCategoryCreator(
   return category;
 }
 
-export async function listCategoriesWithStatsService(userId: string, body: unknown) {
+async function listCategoriesWithStats(userId: string, body: unknown) {
   const parsed = categoryStatsSummarySchema.parse(body ?? {});
 
   const categoryDefaults = defaultCategorySearchRequest();
@@ -68,10 +61,11 @@ export async function listCategoriesWithStatsService(userId: string, body: unkno
 
   const to = bounds?.to ? new Date(bounds.to) : new Date();
 
-  return listCategoriesWithStats(categoryQuery, from, to, sortCriteria);
+  return categoryRepository.listCategoriesWithStats(categoryQuery, from, to, sortCriteria);
 }
 
-export async function createCategoryService(userId: string, body: unknown) {
+async function createCategory(auth: AuthUser, body: unknown) {
+  const userId = auth.id;
   const payload = categorySchema.parse(body);
 
   const validBuckets = await getValidBuckets(userId);
@@ -84,7 +78,7 @@ export async function createCategoryService(userId: string, body: unknown) {
     throw new AppError(USER_ERRORS.DOESNT_EXIST, 409, ERROR_CODES.USER_DOESNT_EXIST);
   }
 
-  const category = await createCategory({
+  const category = await categoryRepository.createCategory({
     userId,
     bucketId: payload.bucketId,
     name: payload.name,
@@ -96,7 +90,7 @@ export async function createCategoryService(userId: string, body: unknown) {
     actorId: userId,
     bucketId: payload.bucketId,
     action: AUDIT_ACTIONS.CREATE,
-    entity: "category",
+    entity: AUDIT_ENTITIES.CATEGORY,
     entityId: category._id.toString(),
     note: `Created category "${category.name}"`,
   });
@@ -104,16 +98,16 @@ export async function createCategoryService(userId: string, body: unknown) {
   return category;
 }
 
-export async function getCategoryService(userId: string, categoryId: string) {
+async function getCategory(userId: string, categoryId: string) {
   const validBuckets = await getValidBuckets(userId);
-  const category = await getCategoryByIdForMember(categoryId, validBuckets);
+  const category = await categoryRepository.getCategoryByIdForMember(categoryId, validBuckets);
   if (!category) {
     throw new AppError(CATEGORY_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   return category;
 }
 
-export async function updateCategoryService(userId: string, categoryId: string, body: unknown) {
+async function updateCategory(userId: string, categoryId: string, body: unknown) {
   const payload = categorySchema.parse(body);
   const validBuckets = await getValidBuckets(userId);
   const validSet = new Set(validBuckets.map((id) => id.toString()));
@@ -127,7 +121,7 @@ export async function updateCategoryService(userId: string, categoryId: string, 
     throw new AppError(BUCKET_ERRORS.NOT_MEMBER, 403, ERROR_CODES.NOT_A_MEMBER);
   }
 
-  const category = await updateCategory(categoryId, currentBucketId, {
+  const category = await categoryRepository.updateCategory(categoryId, currentBucketId, {
     name: payload.name,
     color: payload.color ?? randomHexColor(),
     emoji: payload.emoji,
@@ -147,7 +141,7 @@ export async function updateCategoryService(userId: string, categoryId: string, 
       actorId: userId,
       bucketId: sourceId,
       action: AUDIT_ACTIONS.OUT,
-      entity: "category",
+      entity: AUDIT_ENTITIES.CATEGORY,
       entityId: category._id.toString(),
       note: `Moved category "${category.name}" to ${destName}`,
     });
@@ -155,7 +149,7 @@ export async function updateCategoryService(userId: string, categoryId: string, 
       actorId: userId,
       bucketId: destId,
       action: AUDIT_ACTIONS.IN,
-      entity: "category",
+      entity: AUDIT_ENTITIES.CATEGORY,
       entityId: category._id.toString(),
       note: `Category "${category.name}" moved from ${sourceName}`,
     });
@@ -164,7 +158,7 @@ export async function updateCategoryService(userId: string, categoryId: string, 
       actorId: userId,
       bucketId: currentBucketId,
       action: AUDIT_ACTIONS.UPDATE,
-      entity: "category",
+      entity: AUDIT_ENTITIES.CATEGORY,
       entityId: category._id.toString(),
       note: `Updated category "${category.name}"`,
     });
@@ -173,11 +167,15 @@ export async function updateCategoryService(userId: string, categoryId: string, 
   return category;
 }
 
-export async function deleteCategoryService(userId: string, categoryId: string) {
+async function deleteCategory(userId: string, categoryId: string) {
   const validBuckets = await getValidBuckets(userId);
   const category = await assertCategoryCreator(userId, categoryId, validBuckets);
 
-  const deleted = await deleteCategory(categoryId, category.bucketId.toString());
+  if (await categoryRepository.hasCategoryExpenses(categoryId, category.bucketId.toString())) {
+    throw new AppError(CATEGORY_ERRORS.HAS_EXPENSES, 400, ERROR_CODES.HAS_EXPENSES);
+  }
+
+  const deleted = await categoryRepository.deleteCategory(categoryId, category.bucketId.toString());
   if (!deleted) {
     throw new AppError(CATEGORY_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
@@ -186,7 +184,7 @@ export async function deleteCategoryService(userId: string, categoryId: string) 
     actorId: userId,
     bucketId: category.bucketId.toString(),
     action: AUDIT_ACTIONS.DELETE,
-    entity: "category",
+    entity: AUDIT_ENTITIES.CATEGORY,
     entityId: categoryId,
     note: `Deleted category "${category.name}"`,
   });
@@ -194,16 +192,11 @@ export async function deleteCategoryService(userId: string, categoryId: string) 
   return { message: "Category deleted" };
 }
 
-export async function getCategoryStatsService(
-  userId: string,
-  categoryId: string,
-  from: string,
-  to: string,
-) {
+async function getCategoryStats(userId: string, categoryId: string, from: string, to: string) {
   if (!from || !to) {
     throw new AppError(CATEGORY_ERRORS.FROM_TO_REQUIRED, 400);
   }
-  const category = await getCategoryService(userId, categoryId);
+  const category = await getCategory(userId, categoryId);
   const range = await expenseRepository.getCategoryRangeStats(
     userId,
     categoryId,
@@ -227,7 +220,7 @@ export async function getCategoryStatsService(
 
 // Full expense filter criteria so the distribution respects bucket/owner/
 // category scope, not just the date range.
-export async function getCategoryDistributionService(userId: string, body: unknown) {
+async function getCategoryDistribution(userId: string, body: unknown) {
   const parsed = categoryDistributionSchema.parse(body ?? {});
   const filterCriteria = parsed.filterCriteria ?? defaultExpenseFilterCriteria();
   const { query } = await buildExpenseQuery(userId, {
@@ -238,7 +231,7 @@ export async function getCategoryDistributionService(userId: string, body: unkno
   return expenseRepository.getFilteredCategoryDistribution(query);
 }
 
-export async function getCategoryStatsSummaryService(
+async function getCategoryStatsSummary(
   userId: string,
   body: unknown,
 ): Promise<CategoryStatsSummary> {
@@ -255,7 +248,7 @@ export async function getCategoryStatsSummaryService(
   const from = bounds?.from ? new Date(bounds.from) : new Date(0);
   const to = bounds?.to ? new Date(bounds.to) : new Date();
 
-  const categoryIds = await listCategoryIds(query);
+  const categoryIds = await categoryRepository.listCategoryIds(query);
   if (categoryIds.length === 0) {
     return {
       total: 0,
@@ -296,7 +289,7 @@ function defaultCategorySearchRequest(): CategorySearchRequest {
   };
 }
 
-export async function searchCategoriesService(userId: string, searchRequest: unknown) {
+async function searchCategories(userId: string, searchRequest: unknown) {
   const parsed = categorySearchSchema.parse(searchRequest ?? {});
   const defaults = defaultCategorySearchRequest();
   const request: CategorySearchRequest = {
@@ -304,5 +297,19 @@ export async function searchCategoriesService(userId: string, searchRequest: unk
     sortCriteria: parsed.sortCriteria ?? defaults.sortCriteria,
     pagination: parsed.pagination ?? defaults.pagination,
   };
-  return searchCategories(userId, request);
+  return categoryRepository.searchCategories(userId, request);
 }
+
+const categoryService = {
+  searchCategories,
+  listCategoriesWithStats,
+  createCategory,
+  getCategory,
+  updateCategory,
+  deleteCategory,
+  getCategoryStats,
+  getCategoryDistribution,
+  getCategoryStatsSummary,
+};
+
+export default categoryService;
