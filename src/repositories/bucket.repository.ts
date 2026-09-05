@@ -311,3 +311,29 @@ function buildExpenseMatch(
   applyDateFilter(match, "paidAt", filters.date);
   return match;
 }
+
+// ponytail: ExpenseModel/UserModel reads above are stats/read-models only
+// (expense existence, filtered totals, member display names) — writes stay
+// on BucketModel, so this repository owns no cross-model invariants.
+// Named exports are kept for category/auth/user/expense services (out of
+// scope); bucket.service uses the default object, matching expense.repository.
+const bucketRepository = {
+  listBucketsForMember,
+  isMember,
+  listBucketsForPendingMember,
+  findBucketById,
+  createBucket,
+  updateBucketName,
+  deleteBucket,
+  addBucketMember,
+  acceptBucketMember,
+  pullBucketMember,
+  expenseExistsInBucket,
+  getFilteredBucketExpenseStats,
+  findUsersByIds,
+  findBucketByUserId,
+  listOwnerPendingRequests,
+  searchBuckets,
+};
+
+export default bucketRepository;
