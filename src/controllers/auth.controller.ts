@@ -1,42 +1,26 @@
-import { loginSchema, signupSchema } from "@/lib/validators";
-import { loginUser, registerUser } from "@/services/auth.service";
-import { clearAuthCookie, getAuthPayload, setAuthCookie } from "@/lib/auth";
-import { logAuditEvent } from "@/services/audit.service";
 import { NextRequest } from "next/server";
-import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "@/constants/types/audit.types";
+
+import { clearAuthCookie, getAuthPayload, setAuthCookie } from "@/lib/auth";
+import authService from "@/services/auth.service";
 
 async function signup(request: NextRequest) {
-  const payload = await request.json();
-  const data = signupSchema.parse(payload);
+  const body = await request.json();
 
-  const result = await registerUser(data);
+  const result = await authService.registerUser(body);
 
+  // Cookies stay in the controller: transport concern, service owns validation + audit.
   await setAuthCookie(result.token);
-
-  await logAuditEvent({
-    actorId: result.user.id,
-    action: AUDIT_ACTIONS.SIGNUP,
-    entity: AUDIT_ENTITIES.AUTH,
-    note: "Signed up",
-  });
 
   return result.user;
 }
 
 async function login(request: NextRequest) {
-  const payload = await request.json();
-  const data = loginSchema.parse(payload);
+  const body = await request.json();
 
-  const result = await loginUser(data);
+  const result = await authService.loginUser(body);
 
+  // Cookies stay in the controller: transport concern, service owns validation + audit.
   await setAuthCookie(result.token);
-
-  await logAuditEvent({
-    actorId: result.user.id,
-    action: AUDIT_ACTIONS.LOGIN,
-    entity: AUDIT_ENTITIES.AUTH,
-    note: "Logged in",
-  });
 
   return result.user;
 }
@@ -44,15 +28,10 @@ async function login(request: NextRequest) {
 async function logout() {
   const authUser = await getAuthPayload();
 
+  // Cookies stay in the controller: transport concern, service owns validation + audit.
   await clearAuthCookie();
 
-  await logAuditEvent({
-    actorId: authUser.id,
-    action: AUDIT_ACTIONS.LOGOUT,
-    entity: AUDIT_ENTITIES.AUTH,
-    note: "Logged out",
-  });
-  return { message: "Logged out" };
+  return authService.logoutUser(authUser.id);
 }
 
 const authController = {
