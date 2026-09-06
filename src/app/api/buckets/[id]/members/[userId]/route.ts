@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { connectToDatabase } from "@/lib/db";
-import { revokeInvite } from "@/controllers/bucket.controller";
+import bucketController from "@/controllers/bucket.controller";
 
 export async function DELETE(
   request: NextRequest,
@@ -10,7 +10,7 @@ export async function DELETE(
 ) {
   try {
     await connectToDatabase();
-    const data = await revokeInvite(request, context);
+    const data = await bucketController.revokeInvite(request, context);
     return successResponse(data);
   } catch (error) {
     return errorResponse(error);
