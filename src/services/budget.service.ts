@@ -7,159 +7,55 @@ import {
   CATEGORY_ERRORS,
   ERROR_CODES,
 } from "@/constants/error-messages";
-import { boundsForBudgetPeriod } from "@/lib/date-range";
 import { budgetSchema, budgetUpdateSchema } from "@/lib/validators";
 import { getValidBuckets } from "@/lib/query-builders/membership";
-import { ExpenseModel } from "@/models/Expense";
-import { BucketModel } from "@/models/Bucket";
-import { CategoryModel } from "@/models/Category";
-import {
-  createBudget,
-  deleteBudget,
-  findBudgetById,
-  listBudgetsForBuckets,
-  updateBudget,
-} from "@/repositories/budget.repository";
+import budgetRepository from "@/repositories/budget.repository";
+import { findBucketById } from "@/repositories/bucket.repository";
 import { ensureCategoryInBucket, getCategoryById } from "@/repositories/category.repository";
 import { logAuditEvent } from "@/services/audit.service";
 import type { BudgetGroup, BudgetItem, BudgetPeriod } from "@/constants/types/budget.types";
 import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "@/constants/types/audit.types";
 
-function toBudgetItem(
-  b: Record<string, unknown>,
-  bucketMap: Map<string, { name: string; icon?: string; isPersonal?: boolean }>,
-  categoryMap: Map<string, { name: string; color: string; emoji?: string }>,
-  spentMap: Map<string, number>,
-): BudgetItem {
-  const id = (b._id as Types.ObjectId).toString();
-  const bucketId = (b.bucketId as Types.ObjectId).toString();
-  const categoryId = b.categoryId ? (b.categoryId as Types.ObjectId).toString() : null;
-  const bucket = bucketMap.get(bucketId);
-  const cat = categoryId ? categoryMap.get(categoryId) : undefined;
-  const amount = b.amount as number;
-  const spent = spentMap.get(id) ?? 0;
-  const pct = amount > 0 ? Math.round((spent / amount) * 100) : 0;
+function fallbackBudgetItem(data: {
+  _id: string;
+  bucketId: string;
+  bucketName?: string;
+  bucketIcon?: string;
+  bucketIsPersonal?: boolean;
+  categoryId: string | null;
+  categoryName?: string;
+  categoryColor?: string;
+  categoryEmoji?: string;
+  ownerId: string;
+  amount: number;
+  period: BudgetPeriod;
+}): BudgetItem {
   return {
-    _id: id,
-    bucketId,
-    bucketName: bucket?.name,
-    bucketIcon: bucket?.icon,
-    bucketIsPersonal: bucket?.isPersonal,
-    categoryId,
-    categoryName: cat?.name,
-    categoryColor: cat?.color,
-    categoryEmoji: cat?.emoji,
-    ownerId: (b.ownerId as Types.ObjectId).toString(),
-    amount,
-    period: b.period as BudgetPeriod,
-    spent,
-    remaining: Math.max(0, amount - spent),
-    pct,
-    createdAt: (b.createdAt as Date | undefined)?.toISOString(),
-    updatedAt: (b.updatedAt as Date | undefined)?.toISOString(),
+    _id: data._id,
+    bucketId: data.bucketId,
+    bucketName: data.bucketName,
+    bucketIcon: data.bucketIcon,
+    bucketIsPersonal: data.bucketIsPersonal,
+    categoryId: data.categoryId,
+    categoryName: data.categoryName,
+    categoryColor: data.categoryColor,
+    categoryEmoji: data.categoryEmoji,
+    ownerId: data.ownerId,
+    amount: data.amount,
+    period: data.period,
+    spent: 0,
+    remaining: data.amount,
+    pct: 0,
+    createdAt: undefined,
+    updatedAt: undefined,
   };
 }
 
-async function buildGroups(userId: string): Promise<BudgetGroup[]> {
-  const validBuckets = await getValidBuckets(userId);
-  if (validBuckets.length === 0) return [];
-  const budgets = await listBudgetsForBuckets(validBuckets);
-  if (budgets.length === 0) return [];
-
-  const bucketIds = [...new Set(budgets.map((b) => b.bucketId.toString()))];
-  const categoryIds = budgets
-    .map((b) => b.categoryId)
-    .filter((id): id is Types.ObjectId => !!id)
-    .map((id) => id.toString());
-
-  const [buckets, categories] = await Promise.all([
-    BucketModel.find({ _id: { $in: bucketIds } })
-      .select("name icon isPersonal")
-      .lean(),
-    categoryIds.length
-      ? CategoryModel.find({ _id: { $in: categoryIds } })
-          .select("name color emoji")
-          .lean()
-      : Promise.resolve(
-          [] as unknown as typeof CategoryModel extends { find: (...args: unknown[]) => unknown }
-            ? never
-            : never,
-        ),
-  ]);
-
-  const bucketMap = new Map(
-    buckets.map((b) => [
-      (b._id as Types.ObjectId).toString(),
-      {
-        name: b.name as string,
-        icon: b.icon as string | undefined,
-        isPersonal: b.isPersonal as boolean | undefined,
-      },
-    ]),
-  );
-  const categoryMap = new Map(
-    (categories as { _id: Types.ObjectId; name: string; color: string; emoji?: string }[]).map(
-      (c) => [c._id.toString(), { name: c.name, color: c.color, emoji: c.emoji }],
-    ),
-  );
-
-  // spent per budget = sum expenses in this period for bucket (+ category)
-  const spentMap = new Map<string, number>();
-  await Promise.all(
-    budgets.map(async (b) => {
-      const period = b.period as BudgetPeriod;
-      const { from, to } = boundsForBudgetPeriod(period);
-      const match: Record<string, unknown> = {
-        bucketId: b.bucketId,
-        paidAt: { $gte: from, $lte: to },
-      };
-      if (b.categoryId) match.categoryId = b.categoryId;
-      const agg = await ExpenseModel.aggregate<{ total: number }>([
-        { $match: match },
-        { $group: { _id: null, total: { $sum: "$amount" } } },
-      ]);
-      spentMap.set((b._id as Types.ObjectId).toString(), agg[0]?.total ?? 0);
-    }),
-  );
-
-  const items = budgets.map((b) =>
-    toBudgetItem(b as unknown as Record<string, unknown>, bucketMap, categoryMap, spentMap),
-  );
-
-  // group by bucket
-  const byBucket = new Map<string, BudgetItem[]>();
-  for (const it of items) {
-    if (!byBucket.has(it.bucketId)) byBucket.set(it.bucketId, []);
-    byBucket.get(it.bucketId)!.push(it);
-  }
-
-  const groups: BudgetGroup[] = [];
-  for (const [bucketId, budgets] of byBucket) {
-    const meta = bucketMap.get(bucketId);
-    groups.push({
-      bucketId,
-      bucketName: meta?.name ?? "Unknown",
-      bucketIcon: meta?.icon,
-      isPersonal: meta?.isPersonal,
-      budgets,
-    });
-  }
-
-  // personal first, then alphabetical
-  groups.sort((a, b) => {
-    if (a.isPersonal && !b.isPersonal) return -1;
-    if (!a.isPersonal && b.isPersonal) return 1;
-    return a.bucketName.localeCompare(b.bucketName);
-  });
-
-  return groups;
+async function listBudgetsService(userId: string): Promise<BudgetGroup[]> {
+  return budgetRepository.buildGroups(userId);
 }
 
-export async function listBudgetsService(userId: string): Promise<BudgetGroup[]> {
-  return buildGroups(userId);
-}
-
-export async function createBudgetService(userId: string, body: unknown): Promise<BudgetItem> {
+async function createBudgetService(userId: string, body: unknown): Promise<BudgetItem> {
   const payload = budgetSchema.parse(body);
   const validBuckets = await getValidBuckets(userId);
   const validSet = new Set(validBuckets.map((id) => id.toString()));
@@ -175,9 +71,9 @@ export async function createBudgetService(userId: string, body: unknown): Promis
     categoryId = new Types.ObjectId(payload.categoryId);
   }
 
-  const bucket = await BucketModel.findById(payload.bucketId).lean();
+  const bucket = await findBucketById(payload.bucketId);
   try {
-    const created = await createBudget({
+    const created = await budgetRepository.createBudget({
       bucketId: new Types.ObjectId(payload.bucketId),
       categoryId,
       ownerId: new Types.ObjectId(userId),
@@ -200,22 +96,20 @@ export async function createBudgetService(userId: string, body: unknown): Promis
     });
 
     // build single item with spent
-    const groups = await buildGroups(userId);
+    const groups = await budgetRepository.buildGroups(userId);
     const found = groups.flatMap((g) => g.budgets).find((b) => b._id === created._id.toString());
     if (found) return found;
-    return {
+    return fallbackBudgetItem({
       _id: created._id.toString(),
       bucketId: payload.bucketId,
-      bucketName: bucket?.name as string | undefined,
-      bucketIcon: bucket?.icon as string | undefined,
+      bucketName: bucket?.name,
+      bucketIcon: bucket?.icon,
+      bucketIsPersonal: bucket?.isPersonal,
       categoryId: categoryId?.toString() ?? null,
       ownerId: userId,
       amount: payload.amount,
       period: payload.period as BudgetPeriod,
-      spent: 0,
-      remaining: payload.amount,
-      pct: 0,
-    };
+    });
   } catch (e: unknown) {
     if ((e as { code?: number }).code === 11000) {
       throw new AppError(BUDGET_ERRORS.ALREADY_EXISTS, 409, ERROR_CODES.ALREADY_EXISTS);
@@ -224,13 +118,13 @@ export async function createBudgetService(userId: string, body: unknown): Promis
   }
 }
 
-export async function updateBudgetService(
+async function updateBudgetService(
   userId: string,
   budgetId: string,
   body: unknown,
 ): Promise<BudgetItem> {
   const payload = budgetUpdateSchema.parse(body);
-  const current = await findBudgetById(budgetId);
+  const current = await budgetRepository.findBudgetById(budgetId);
   if (!current) throw new AppError(BUDGET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   if (current.ownerId.toString() !== userId) {
     throw new AppError(BUDGET_ERRORS.NOT_OWNER_EDIT, 403, ERROR_CODES.NOT_OWNER);
@@ -286,21 +180,21 @@ export async function updateBudgetService(
 
   if (Object.keys(update).length === 0) {
     // no change, return current as BudgetItem
-    const groups = await buildGroups(userId);
+    const groups = await budgetRepository.buildGroups(userId);
     const found = groups.flatMap((g) => g.budgets).find((b) => b._id === budgetId);
     if (found) return found;
     throw new AppError(BUDGET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
 
   try {
-    const updated = await updateBudget(budgetId, update);
+    const updated = await budgetRepository.updateBudget(budgetId, update);
     if (!updated) throw new AppError(BUDGET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
 
-    const isMove = payload?.bucketId !== current.bucketId.toString();
+    const isMove = payload.bucketId && payload.bucketId !== current.bucketId.toString();
     if (isMove) {
       const sourceName =
-        (await BucketModel.findById(current.bucketId).lean())?.name ?? current.bucketId.toString();
-      const destName = (await BucketModel.findById(targetBucketId).lean())?.name ?? targetBucketId;
+        (await findBucketById(current.bucketId.toString()))?.name ?? current.bucketId.toString();
+      const destName = (await findBucketById(targetBucketId))?.name ?? targetBucketId;
       await logAuditEvent({
         actorId: userId,
         bucketId: current.bucketId.toString(),
@@ -334,11 +228,11 @@ export async function updateBudgetService(
       });
     }
 
-    const groups = await buildGroups(userId);
+    const groups = await budgetRepository.buildGroups(userId);
     const found = groups.flatMap((g) => g.budgets).find((b) => b._id === budgetId);
     if (found) return found;
     // fallback
-    return {
+    return fallbackBudgetItem({
       _id: budgetId,
       bucketId: targetBucketId,
       categoryId:
@@ -348,10 +242,7 @@ export async function updateBudgetService(
       ownerId: userId,
       amount: nextAmount,
       period: nextPeriod as BudgetPeriod,
-      spent: 0,
-      remaining: nextAmount,
-      pct: 0,
-    };
+    });
   } catch (e: unknown) {
     if ((e as { code?: number }).code === 11000) {
       throw new AppError(BUDGET_ERRORS.ALREADY_EXISTS, 409, ERROR_CODES.ALREADY_EXISTS);
@@ -360,13 +251,13 @@ export async function updateBudgetService(
   }
 }
 
-export async function deleteBudgetService(userId: string, budgetId: string) {
-  const current = await findBudgetById(budgetId);
+async function deleteBudgetService(userId: string, budgetId: string) {
+  const current = await budgetRepository.findBudgetById(budgetId);
   if (!current) throw new AppError(BUDGET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   if (current.ownerId.toString() !== userId) {
     throw new AppError(BUDGET_ERRORS.NOT_OWNER_DELETE, 403, ERROR_CODES.NOT_OWNER);
   }
-  await deleteBudget(budgetId);
+  await budgetRepository.deleteBudget(budgetId);
 
   await logAuditEvent({
     actorId: userId,
@@ -379,3 +270,12 @@ export async function deleteBudgetService(userId: string, budgetId: string) {
 
   return { message: "Budget deleted" };
 }
+
+const budgetService = {
+  listBudgetsService,
+  createBudgetService,
+  updateBudgetService,
+  deleteBudgetService,
+};
+
+export default budgetService;
