@@ -1,10 +1,10 @@
 import { auditSearchSchema } from "@/lib/validators";
-import { createAuditLog, searchAuditLogs } from "@/repositories/audit.repository";
+import auditRepository from "@/repositories/audit.repository";
 import type { AuditSearchRequest } from "@/constants/types/search.types";
-import { AuditLogType } from "@/constants/types/audit.types";
+import type { AuditLogType } from "@/constants/types/audit.types";
 
-export async function logAuditEvent(input: AuditLogType): Promise<void> {
-  await createAuditLog(input);
+async function logAuditEvent(input: AuditLogType): Promise<void> {
+  await auditRepository.createAuditLog(input);
 }
 
 function defaultAuditSearchRequest(): AuditSearchRequest {
@@ -19,12 +19,24 @@ function defaultAuditSearchRequest(): AuditSearchRequest {
   };
 }
 
-export async function searchAuditLogsService(userId: string, searchRequest: unknown) {
+async function searchAuditLogs(userId: string, searchRequest: unknown) {
   const parsed = auditSearchSchema.parse(searchRequest ?? {});
   const defaults = defaultAuditSearchRequest();
-  return searchAuditLogs(userId, {
+  const request: AuditSearchRequest = {
     filterCriteria: { ...defaults.filterCriteria, ...parsed.filterCriteria },
     sortCriteria: parsed.sortCriteria ?? defaults.sortCriteria,
     pagination: parsed.pagination ?? defaults.pagination,
-  });
+  };
+  return auditRepository.searchAuditLogs(userId, request);
 }
+
+const auditService = {
+  searchAuditLogs,
+  logAuditEvent,
+};
+
+export default auditService;
+
+// ponytail: named alias until expense/category/bucket/budget/auth callers migrate
+// to the auditService default import; delete at integration.
+export { logAuditEvent };

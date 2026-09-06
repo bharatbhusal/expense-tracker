@@ -1,10 +1,16 @@
 import { NextRequest } from "next/server";
 
 import { getAuthPayload } from "@/lib/auth";
-import { searchAuditLogsService } from "@/services/audit.service";
+import auditService from "@/services/audit.service";
 
-export async function searchAuditLogs(request: NextRequest) {
+async function searchAuditLogs(request: NextRequest) {
   const auth = await getAuthPayload();
   const body = await request.json().catch(() => ({}));
-  return searchAuditLogsService(auth.id, body);
+  return auditService.searchAuditLogs(auth.id, body);
 }
+
+const auditController = {
+  searchAuditLogs,
+};
+
+export default auditController;
