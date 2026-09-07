@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import {
   Bar,
   BarChart,
+  BarStack,
   CartesianGrid,
   ReferenceLine,
   ResponsiveContainer,
@@ -64,16 +65,19 @@ export function SpendingBarChart({
               <XAxis dataKey="name" tick={CHART_TICK} interval="preserveStartEnd" minTickGap={8} />
               <YAxis tick={CHART_TICK} width={48} />
               <Tooltip content={<ChartTooltip />} cursor={CHART_CURSOR} />
-              {categoryNames.map((name, i) => (
-                <Bar
-                  key={name}
-                  dataKey={name}
-                  stackId="spend"
-                  fill={chartColor(categoryColorMap, name, "var(--chart-1)")}
-                  // ponytail: top-only radius on the last stack segment.
-                  radius={i === categoryNames.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
-                />
-              ))}
+              {/* ponytail: BarStack clips the whole stack to rounded corners per
+                  bar (recharts >=3.6), so top rounding is consistent even when the
+                  last category is 0 on some bars */}
+              <BarStack radius={[6, 6, 0, 0]}>
+                {categoryNames.map((name) => (
+                  <Bar
+                    key={name}
+                    dataKey={name}
+                    stackId="spend"
+                    fill={chartColor(categoryColorMap, name, "var(--chart-1)")}
+                  />
+                ))}
+              </BarStack>
               {(averageSpend ?? 0) > 0 && (
                 <ReferenceLine
                   y={averageSpend}
