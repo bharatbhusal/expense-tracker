@@ -20,7 +20,7 @@ export function CardMenu({ options, onSelect, label }: CardMenuProps) {
       options={options}
       onValueChange={onSelect}
       aria-label={label}
-      className="h-8 w-8 cursor-pointer shrink-0"
+      // className="h-8 w-8 cursor-pointer shrink-0"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();

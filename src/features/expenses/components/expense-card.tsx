@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { DropdownList } from "@/components/ui/dropdown-list";
 import { formatShortDateTime } from "@/lib/datetime";
 import { shareLink } from "@/lib/share";
+import { CardMenu } from "@/components/ui/card-menu";
 
 type Props = {
   expense: ExpenseItem;
@@ -74,16 +75,7 @@ export function ExpenseCard({ expense, onEdit, onDelete }: Props) {
         {hasActions && (
           <>
             {isOwner ? (
-              <DropdownList
-                value=""
-                placeholder="Actions"
-                trigger={<FiMoreVertical className="h-4 w-4" />}
-                options={menuOptions}
-                onValueChange={handleMenu}
-                aria-label="Expense actions"
-                className="h-8 w-8 cursor-pointer shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              />
+              <CardMenu options={menuOptions} onSelect={handleMenu} label="Expense actions" />
             ) : (
               <Button
                 variant="ghost"
