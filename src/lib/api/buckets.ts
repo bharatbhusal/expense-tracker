@@ -4,12 +4,12 @@ import type {
   BucketPreview,
   BucketSummary,
   IncomingRequestsGroup,
-} from "@/types/bucket.types";
+} from "@/constants/types/bucket.types";
 import type {
   BucketSearchRequest,
   ExpenseFilterCriteria,
   SearchResult,
-} from "@/types/search.types";
+} from "@/constants/types/search.types";
 
 export const bucketsApi = {
   searchBuckets: (request: BucketSearchRequest) =>

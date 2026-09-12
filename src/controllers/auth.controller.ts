@@ -1,30 +1,43 @@
-import { loginSchema, signupSchema } from "@/lib/validators";
-import { loginUser, registerUser } from "@/services/auth.service";
-import { setAuthCookie } from "@/lib/auth";
-import { logAuditEvent } from "@/services/audit.service";
+import { NextRequest } from "next/server";
 
-export async function signupController(payload: unknown) {
-  const data = signupSchema.parse(payload);
-  const result = await registerUser(data);
+import { clearAuthCookie, getAuthPayload, setAuthCookie } from "@/lib/auth";
+import authService from "@/services/auth.service";
+
+async function signup(request: NextRequest) {
+  const body = await request.json();
+
+  const result = await authService.registerUser(body);
+
+  // Cookies stay in the controller: transport concern, service owns validation + audit.
   await setAuthCookie(result.token);
-  await logAuditEvent({
-    actorId: result.user.id,
-    action: "signup",
-    entity: "auth",
-    note: "Signed up",
-  });
+
   return result.user;
 }
 
-export async function loginController(payload: unknown) {
-  const data = loginSchema.parse(payload);
-  const result = await loginUser(data);
+async function login(request: NextRequest) {
+  const body = await request.json();
+
+  const result = await authService.loginUser(body);
+
+  // Cookies stay in the controller: transport concern, service owns validation + audit.
   await setAuthCookie(result.token);
-  await logAuditEvent({
-    actorId: result.user.id,
-    action: "login",
-    entity: "auth",
-    note: "Logged in",
-  });
+
   return result.user;
 }
+
+async function logout() {
+  const authUser = await getAuthPayload();
+
+  // Cookies stay in the controller: transport concern, service owns validation + audit.
+  await clearAuthCookie();
+
+  return authService.logoutUser(authUser.id);
+}
+
+const authController = {
+  signup,
+  login,
+  logout,
+};
+
+export default authController;

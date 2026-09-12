@@ -8,32 +8,20 @@
   --color-surface: #faf6f2;
   --color-surface-muted: #efe9e3;
   --color-text: #1a1410;
-  --color-muted: #8a7e72;
+  --color-muted: #6f6257;
   --color-border: #e3ddd6;
   --color-primary: #1a1410;
   --color-primary-muted: #e3ddd6;
   --color-primary-foreground: #faf6f2;
   --color-danger: #dc2626;
-  --font-size-xs: 0.75rem;
-  --font-size-sm: 0.875rem;
-  --font-size-md: 1rem;
-  --font-size-lg: 1.125rem;
-  --font-size-xl: 1.5rem;
+  --color-danger-foreground: #ffffff;
   --line-tight: 1.2;
   --line-normal: 1.5;
-  --radius-sm: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.25rem;
   --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.08);
   --shadow-elevated: 0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
   --shadow-modal: 0 20px 48px -8px rgb(0 0 0 / 0.12), 0 8px 16px -4px rgb(0 0 0 / 0.08);
   --chart-1: #3b82f6;
   --chart-2: #06b6d4;
-  --chart-3: #8b5cf6;
-  --chart-4: #f97316;
-  --chart-5: #e11d48;
-  --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-right: env(safe-area-inset-right, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-left: env(safe-area-inset-left, 0px);
@@ -45,20 +33,18 @@
   --color-surface: #141414;
   --color-surface-muted: #1c1c1c;
   --color-text: #f0f0f0;
-  --color-muted: #6b7280;
+  --color-muted: #9ca3af;
   --color-border: #222222;
   --color-primary: #f0f0f0;
   --color-primary-muted: #2a2a2a;
   --color-primary-foreground: #0a0a0a;
   --color-danger: #f87171;
+  --color-danger-foreground: #1a1410;
   --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.4);
   --shadow-elevated: 0 4px 12px -2px rgb(0 0 0 / 0.5);
   --shadow-modal: 0 20px 48px -8px rgb(0 0 0 / 0.6);
   --chart-1: #60a5fa;
   --chart-2: #22d3ee;
-  --chart-3: #a78bfa;
-  --chart-4: #fb923c;
-  --chart-5: #fb7185;
 }
 
 * {
@@ -128,9 +114,19 @@ h4 {
   line-height: var(--line-tight);
 }
 
+/* ponytail: default-visible so content shows with JS off, GSAP failing, or
+   reduced-motion — use-page-transition only enhances via from-tweens. */
 [data-animate] {
-  opacity: 0;
-  transform: translateY(12px);
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-animate] {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
 }
 
 [data-animate].gsap-done {

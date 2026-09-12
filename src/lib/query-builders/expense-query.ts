@@ -1,12 +1,16 @@
-import { Types } from "mongoose";
-
-import { toIsoBoundsForPreset } from "@/lib/date-range";
-import { resolveBucketScope } from "@/lib/query-builders/membership";
-import { escapeRegex } from "@/lib/utils";
-import type { ExpenseSearchRequest } from "@/types/search.types";
-
-type MongoFilter = Record<string, unknown>;
-type MongoSort = Record<string, 1 | -1>;
+import { EXPENSE_SORTABLE_FIELDS } from "@/constants/types/search.types";
+import type { ExpenseSearchRequest } from "@/constants/types/search.types";
+import {
+  applyBucketScope,
+  applyCategoryFilter,
+  applyDateFilter,
+  applyOwnerFilter,
+  buildPaging,
+  buildSort,
+  searchRegex,
+  type MongoFilter,
+  type MongoSort,
+} from "@/lib/query-builders/shared";
 
 export async function buildExpenseQuery(
   userId: string,
@@ -17,43 +21,19 @@ export async function buildExpenseQuery(
   skip: number;
   limit: number;
 }> {
+  const ctx = { userId };
   const filters = request.filterCriteria;
   const query: MongoFilter = {};
 
-  query.bucketId = await resolveBucketScope(userId, filters.bucketPreset, filters.bucketIds);
-
-  if (filters.categoryPreset === "MULTIPLE") {
-    const ids = filters.categoryIds
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-    if (ids.length > 0) {
-      query.categoryId = { $in: ids };
-    }
-  }
-
-  if (filters.ownerPreset === "ME") {
-    query.userId = new Types.ObjectId(userId);
-  } else if (filters.ownerPreset === "MULTIPLE") {
-    query.userId = {
-      $in: filters.ownerIds
-        .filter((id) => Types.ObjectId.isValid(id))
-        .map((id) => new Types.ObjectId(id)),
-    };
-  }
-
-  const bounds = toIsoBoundsForPreset(filters.datePreset, filters.customFrom, filters.customTo);
-  if (bounds) {
-    query.paidAt = {
-      ...(bounds.from ? { $gte: new Date(bounds.from) } : {}),
-      ...(bounds.to ? { $lte: new Date(bounds.to) } : {}),
-    };
-  }
+  await applyBucketScope(query, ctx, filters.bucket);
+  applyCategoryFilter(query, filters.category);
+  applyOwnerFilter(query, "userId", ctx, filters.owner);
+  applyDateFilter(query, "paidAt", filters.date);
 
   const and: MongoFilter[] = [];
 
-  const q = filters.q?.trim();
-  if (q) {
-    const regex = new RegExp(escapeRegex(q), "i");
+  const regex = searchRegex(filters.q);
+  if (regex) {
     and.push({ $or: [{ title: regex }, { notes: regex }] });
   }
 
@@ -90,16 +70,9 @@ export async function buildExpenseQuery(
     query.$and = and;
   }
 
-  const sort: MongoSort = {
-    [request.sortCriteria.field]: request.sortCriteria.direction === "ASC" ? 1 : -1,
-  };
-  const page = request.pagination.page;
-  const pageSize = request.pagination.pageSize;
-
   return {
     query,
-    sort,
-    skip: (page - 1) * pageSize,
-    limit: pageSize,
+    sort: buildSort(EXPENSE_SORTABLE_FIELDS, request.sortCriteria),
+    ...buildPaging(request.pagination),
   };
 }

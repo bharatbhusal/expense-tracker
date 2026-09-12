@@ -1,4 +1,4 @@
-import { InviteView } from "@/features/buckets/components/invite-view";
+import { InviteView } from "@/features/buckets/invite-view";
 
 export const metadata = {
   title: "Join Bucket",

@@ -5,8 +5,8 @@ import { FiChevronDown, FiChevronUp } from "react-icons/fi";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import type { BucketSummary } from "@/types/bucket.types";
-import type { CategoryItem } from "@/types/expense.types";
+import type { BucketSummary } from "@/constants/types/bucket.types";
+import type { CategoryItem } from "@/constants/types/expense.types";
 
 type BucketCategoryFilterSectionProps = {
   buckets: BucketSummary[];

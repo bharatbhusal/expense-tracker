@@ -37,9 +37,26 @@ const persistConfig: PersistConfig<RootReducerState> = {
   storage,
   stateReconciler: autoMergeLevel2 as PersistConfig<RootReducerState>["stateReconciler"],
   whitelist: ["auth", "ui", "expenses", "categories", "filters", "buckets", "budgets"],
-  version: 1,
+  version: 2,
   migrate: ((state: unknown) => {
     const s = state as Partial<RootReducerState> | undefined;
+    // ponytail: v1 stored flat presets (bucketPreset/datePreset/…); v2 uses
+    // discriminated unions — reset filters once instead of reading stale shapes.
+    const filters = s?.filters as unknown as
+      Record<string, { filterCriteria?: object }> | undefined;
+    const isLegacy = filters
+      ? Object.values(filters).some(
+          (v) =>
+            v?.filterCriteria &&
+            ("bucketPreset" in v.filterCriteria || "datePreset" in v.filterCriteria),
+        )
+      : false;
+    if (isLegacy) {
+      return Promise.resolve({
+        ...(s as object),
+        filters: initialFiltersState,
+      } as unknown as RootReducerState & { _persist: unknown });
+    }
     if (s?.filters && "filterCriteria" in (s.filters as unknown as Record<string, unknown>)) {
       return Promise.resolve({
         ...(s as object),

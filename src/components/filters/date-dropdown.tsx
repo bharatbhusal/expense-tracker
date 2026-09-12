@@ -3,7 +3,7 @@
 import { DropdownList } from "@/components/ui/dropdown-list";
 import { presetLabel } from "@/lib/date-range";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import type { FilterDatePreset } from "@/types/search.types";
+import type { DateFilter, FilterDatePreset } from "@/constants/types/search.types";
 import { PRESETS } from "./date-filter-section";
 import type { FilterVariant } from "./variants";
 import { ACTIONS } from "./variants";
@@ -16,19 +16,20 @@ type DateDropdownProps = {
 export function DateDropdown({ variant, onCustomOpen }: DateDropdownProps) {
   const dispatch = useAppDispatch();
   const sliceState = useAppSelector((s) => (s.filters as Record<string, any>)[variant]);
-  const filterCriteria = sliceState.filterCriteria;
+  const date = (sliceState.filterCriteria as { date?: DateFilter }).date;
 
   const setPreset = (preset: FilterDatePreset) => {
     if (preset === "CUSTOM") {
       onCustomOpen();
       return;
     }
-    dispatch(ACTIONS[variant].setDateFilter!({ preset }));
+    dispatch(ACTIONS[variant].setDateFilter!({ date: { preset } }));
   };
 
   return (
     <DropdownList
-      value={filterCriteria.datePreset}
+      aria-label="Filter by date"
+      value={date?.preset ?? "THIS_MONTH"}
       onValueChange={(v) => setPreset(v as FilterDatePreset)}
       options={PRESETS.map((p) => ({
         value: p,

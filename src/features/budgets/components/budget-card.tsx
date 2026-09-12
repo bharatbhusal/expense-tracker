@@ -1,15 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { FiMoreVertical } from "react-icons/fi";
 
-import { Card } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/modals/dialog";
-import { DropdownList } from "@/components/ui/dropdown-list";
-import { BudgetFormDialog } from "@/features/budgets/components/budget-form";
+import { CardMenu } from "@/components/ui/card-menu";
+import { EmojiBadge } from "@/components/ui/emoji-badge";
+import { BudgetFormDialog } from "@/features/budgets/budget-form";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
 import { deleteBudget } from "@/store/slices/budgetSlice";
-import type { BudgetItem } from "@/types/budget.types";
+import type { BudgetItem } from "@/constants/types/budget.types";
 import { formatCurrency } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -30,6 +30,7 @@ export function BudgetCard({ budget }: { budget: BudgetItem }) {
 
   const pct = Math.min(100, budget.pct);
   const over = budget.spent > budget.amount;
+  const name = budget.categoryName ?? "Bucket budget";
 
   const handleMenu = (value: string) => {
     if (value === "edit") setEditOpen(true);
@@ -45,41 +46,38 @@ export function BudgetCard({ budget }: { budget: BudgetItem }) {
     <>
       <Card className="space-y-2">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-sm font-medium truncate">
-              {budget.categoryName ? (
-                <span>
-                  {budget.categoryEmoji ?? "🏷️"} {budget.categoryName}
-                </span>
-              ) : (
-                <span>Bucket budget</span>
-              )}
-            </p>
-            <p className="text-xs text-[var(--color-muted)]">
-              {periodLabel[budget.period] ?? budget.period}
-            </p>
+          <div className="flex min-w-0 items-center gap-2">
+            {budget.categoryName ? (
+              <EmojiBadge
+                emoji={budget.categoryEmoji}
+                color={budget.categoryColor ?? "var(--color-surface-muted)"}
+              />
+            ) : null}
+            <div className="min-w-0">
+              <CardTitle className="truncate" title={name}>
+                {name}
+              </CardTitle>
+              <p className="text-xs text-[var(--color-muted)]">
+                {periodLabel[budget.period] ?? budget.period}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <p className="text-sm font-semibold whitespace-nowrap">
               {formatCurrency(budget.amount, currency)}
             </p>
             {isOwner && (
-              <DropdownList
-                value=""
-                placeholder="Actions"
-                trigger={<FiMoreVertical className="h-4 w-4" />}
-                options={menuOptions}
-                onValueChange={handleMenu}
-                aria-label="Budget actions"
-                className="h-8 w-8 cursor-pointer shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              />
+              <CardMenu options={menuOptions} onSelect={handleMenu} label="Budget actions" />
             )}
           </div>
         </div>
 
         <div className="space-y-1">
-          <div className="h-2 rounded-full bg-[var(--color-border)] overflow-hidden">
+          <div
+            role="status"
+            aria-label={over ? `Over budget by ${Math.abs(budget.pct - 100)}%` : undefined}
+            className="h-2 rounded-full bg-[var(--color-surface-muted)] overflow-hidden"
+          >
             <div
               className={`h-full rounded-full transition-all ${over ? "bg-[var(--color-danger)]" : "bg-[var(--color-primary)]"}`}
               style={{ width: `${pct}%` }}
@@ -88,7 +86,13 @@ export function BudgetCard({ budget }: { budget: BudgetItem }) {
           <div className="flex justify-between text-xs text-[var(--color-muted)]">
             <span>{formatCurrency(budget.spent, currency)} spent</span>
             <span className={over ? "text-[var(--color-danger)] font-medium" : ""}>
-              {over ? `${Math.abs(budget.pct - 100)}% over` : `${Math.abs(budget.pct - 100)}% left`}
+              {over ? (
+                <>
+                  <span aria-hidden="true">! </span>Over budget · {Math.abs(budget.pct - 100)}% over
+                </>
+              ) : (
+                `${Math.abs(budget.pct - 100)}% left`
+              )}
             </span>
           </div>
         </div>

@@ -16,7 +16,7 @@ export function LogCard({ log }: Props) {
   const bucket = log.bucketName ? `${log.bucketIcon ?? "📁"} ${log.bucketName}` : null;
 
   return (
-    <Card className="rounded-md border border-[var(--color-border)] p-3">
+    <Card className="border border-[var(--color-border)] p-3">
       <div className="flex gap-2 items-center justify-between">
         <div className="min-w-0 flex-1">
           <p className="font-medium capitalize leading-5">

@@ -1,37 +1,21 @@
 import { Types } from "mongoose";
 
 import { DEFAULT_CATEGORIES } from "@/lib/constants";
-import { toIsoBoundsForPreset } from "@/lib/date-range";
 import { AppError } from "@/lib/errors";
-import { escapeRegex } from "@/lib/utils";
+import { BUCKET_ERRORS, ERROR_CODES, USER_ERRORS } from "@/constants/error-messages";
+import { buildBucketStatsExpenseMatch } from "@/lib/query-builders";
 import {
   bucketSchema,
   bucketSearchSchema,
   bucketStatsSchema,
   inviteSchema,
 } from "@/lib/validators";
-import {
-  addBucketMember,
-  acceptBucketMember,
-  createBucket,
-  deleteBucket,
-  expenseExistsInBucket,
-  findBucketById,
-  findUsersByIds,
-  getFilteredBucketExpenseStats,
-  listBucketsForMember,
-  listBucketsForPendingMember,
-  listOwnerPendingRequests,
-  pullBucketMember,
-  searchBuckets,
-  updateBucketName,
-  type BucketDoc,
-} from "@/repositories/bucket.repository";
+import bucketRepository, { type BucketDoc } from "@/repositories/bucket.repository";
 import {
   ensureCategoryInBucket,
   deleteCategoriesByBucket,
 } from "@/repositories/category.repository";
-import { findUserByUsername } from "@/repositories/user.repository";
+import userRepository from "@/repositories/user.repository";
 import { logAuditEvent } from "@/services/audit.service";
 import type {
   BucketDetail,
@@ -39,13 +23,14 @@ import type {
   BucketsListPayload,
   BucketSummary,
   IncomingRequestsGroup,
-} from "@/types/bucket.types";
-import type { BucketSearchRequest } from "@/types/search.types";
+} from "@/constants/types/bucket.types";
+import type { BucketSearchRequest, ExpenseFilterCriteria } from "@/constants/types/search.types";
+import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "@/constants/types/audit.types";
 
-export async function listBucketsService(userId: string): Promise<BucketsListPayload> {
+async function listBuckets(userId: string): Promise<BucketsListPayload> {
   const [accepted, invitations] = await Promise.all([
-    listBucketsForMember(userId),
-    listBucketsForPendingMember(userId),
+    bucketRepository.listBucketsForMember(userId),
+    bucketRepository.listBucketsForPendingMember(userId),
   ]);
 
   const items: BucketSummary[] = accepted.map((bucket) => toSummary(bucket, userId));
@@ -56,10 +41,10 @@ export async function listBucketsService(userId: string): Promise<BucketsListPay
   };
 }
 
-export async function createBucketService(userId: string, body: unknown): Promise<BucketDetail> {
+async function createBucket(userId: string, body: unknown): Promise<BucketDetail> {
   const payload = bucketSchema.parse(body);
 
-  const bucket = await createBucket({
+  const bucket = await bucketRepository.createBucket({
     name: payload.name,
     icon: payload.icon,
     ownerId: userId,
@@ -80,8 +65,8 @@ export async function createBucketService(userId: string, body: unknown): Promis
   await logAuditEvent({
     actorId: userId,
     bucketId: bucket._id.toString(),
-    action: "create",
-    entity: "bucket",
+    action: AUDIT_ACTIONS.CREATE,
+    entity: AUDIT_ENTITIES.BUCKET,
     entityId: bucket._id.toString(),
     note: `Created bucket "${bucket.name}"`,
   });
@@ -89,30 +74,31 @@ export async function createBucketService(userId: string, body: unknown): Promis
   return toDetail(bucket);
 }
 
-export async function getBucketStatsService(
+async function getBucketStats(
   userId: string,
   bucketId: string,
   body: unknown,
 ): Promise<BucketDetail> {
   const parsed = bucketStatsSchema.parse(body ?? {});
-  const bucket = await findBucketById(bucketId);
+  const bucket = await bucketRepository.findBucketById(bucketId);
   if (!bucket) {
-    throw new AppError("Bucket not found", 404, "NOT_FOUND");
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   const member = bucket.members.find((m) => m.userId.toString() === userId);
   if (!member || member.status !== "accepted") {
-    throw new AppError("Not a member of this bucket", 403, "NOT_A_MEMBER");
+    throw new AppError(BUCKET_ERRORS.NOT_MEMBER, 403, ERROR_CODES.NOT_A_MEMBER);
   }
   const detail = await toDetail(bucket);
-  const f = parsed.filterCriteria ?? {
-    categoryPreset: "ALL" as const,
-    categoryIds: [] as string[],
-    ownerPreset: "ALL" as const,
-    ownerIds: [] as string[],
-    datePreset: "THIS_MONTH" as const,
+  const criteria = parsed.filterCriteria ?? {};
+  const filters: ExpenseFilterCriteria = {
+    bucket: { preset: "ALL" },
+    category: { preset: "ALL" },
+    owner: { preset: "ALL" },
+    date: { preset: "THIS_MONTH" },
+    ...criteria,
   };
-  const expenseMatch = buildBucketStatsExpenseMatch(userId, f);
-  const stats = await getFilteredBucketExpenseStats(bucketId, expenseMatch);
+  const expenseMatch = buildBucketStatsExpenseMatch(userId, filters);
+  const stats = await bucketRepository.getFilteredBucketExpenseStats(bucketId, expenseMatch);
   return {
     ...detail,
     role: member.role,
@@ -122,124 +108,48 @@ export async function getBucketStatsService(
   };
 }
 
-function buildBucketStatsExpenseMatch(
-  userId: string,
-  filters: {
-    categoryPreset: "ALL" | "MULTIPLE";
-    categoryIds: string[];
-    ownerPreset: "ME" | "ALL" | "MULTIPLE";
-    ownerIds: string[];
-    datePreset: string;
-    customFrom?: string;
-    customTo?: string;
-    hasNotes?: boolean;
-    hasLocation?: boolean;
-    q?: string;
-  },
-): Record<string, unknown> {
-  const match: Record<string, unknown> = {};
-  if (filters.categoryPreset === "MULTIPLE") {
-    const ids = filters.categoryIds
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-    if (ids.length > 0) match.categoryId = { $in: ids };
-  }
-  if (filters.ownerPreset === "ME") {
-    match.userId = new Types.ObjectId(userId);
-  } else if (filters.ownerPreset === "MULTIPLE") {
-    const ids = filters.ownerIds
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-    if (ids.length > 0) match.userId = { $in: ids };
-  }
-  const bounds = toIsoBoundsForPreset(
-    filters.datePreset as any,
-    filters.customFrom,
-    filters.customTo,
-  );
-  if (bounds) {
-    match.paidAt = {
-      ...(bounds.from ? { $gte: new Date(bounds.from) } : {}),
-      ...(bounds.to ? { $lte: new Date(bounds.to) } : {}),
-    };
-  }
-  const and: Record<string, unknown>[] = [];
-  const q = filters.q?.trim();
-  if (q) {
-    const regex = new RegExp(escapeRegex(q), "i");
-    and.push({
-      $or: [{ title: regex }, { notes: regex }],
-    } as any);
-  }
-  if (filters.hasNotes !== undefined) {
-    and.push(
-      filters.hasNotes
-        ? { notes: { $exists: true, $nin: ["", null] } }
-        : ({
-            $or: [{ notes: { $exists: false } }, { notes: { $in: ["", null] } }],
-          } as any),
-    );
-  }
-  if (filters.hasLocation !== undefined) {
-    and.push(
-      filters.hasLocation
-        ? {
-            $or: [
-              { "location.latitude": { $exists: true, $ne: 0 } },
-              { "location.longitude": { $exists: true, $ne: 0 } },
-            ],
-          }
-        : ({
-            $or: [
-              { "location.latitude": { $exists: false } },
-              { "location.latitude": 0, "location.longitude": 0 },
-            ],
-          } as any),
-    );
-  }
-  if (and.length > 0) (match as any).$and = and;
-  return match;
-}
-
-export async function updateBucketService(
+async function updateBucket(
   userId: string,
   bucketId: string,
   body: unknown,
 ): Promise<BucketDetail> {
   const payload = bucketSchema.parse(body);
   await requireOwner(userId, bucketId);
-  const bucket = await updateBucketName(bucketId, {
+  const bucket = await bucketRepository.updateBucketName(bucketId, {
     name: payload.name,
     icon: payload.icon,
   });
+  if (!bucket) {
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
+  }
 
   await logAuditEvent({
     actorId: userId,
     bucketId,
-    action: "update",
-    entity: "bucket",
+    action: AUDIT_ACTIONS.UPDATE,
+    entity: AUDIT_ENTITIES.BUCKET,
     entityId: bucketId,
     note: `Updated bucket "${payload.name}"`,
   });
 
-  return toDetail(bucket!);
+  return toDetail(bucket);
 }
 
-export async function deleteBucketService(userId: string, bucketId: string) {
+async function deleteBucket(userId: string, bucketId: string) {
   const bucket = await requireOwner(userId, bucketId);
-  const hasExpenses = await expenseExistsInBucket(bucketId);
+  const hasExpenses = await bucketRepository.expenseExistsInBucket(bucketId);
   if (hasExpenses) {
-    throw new AppError("Cannot delete bucket with expenses", 400, "HAS_EXPENSES");
+    throw new AppError(BUCKET_ERRORS.HAS_EXPENSES, 400, ERROR_CODES.HAS_EXPENSES);
   }
 
   await deleteCategoriesByBucket(bucketId);
-  await deleteBucket(bucketId);
+  await bucketRepository.deleteBucket(bucketId);
 
   await logAuditEvent({
     actorId: userId,
     bucketId,
-    action: "delete",
-    entity: "bucket",
+    action: AUDIT_ACTIONS.DELETE,
+    entity: AUDIT_ENTITIES.BUCKET,
     entityId: bucketId,
     note: `Deleted bucket "${bucket.name}"`,
   });
@@ -247,77 +157,76 @@ export async function deleteBucketService(userId: string, bucketId: string) {
   return { message: "Bucket deleted" };
 }
 
-export async function inviteUserService(
-  userId: string,
-  bucketId: string,
-  body: unknown,
-): Promise<BucketDetail> {
+async function inviteUser(userId: string, bucketId: string, body: unknown): Promise<BucketDetail> {
   const payload = inviteSchema.parse(body);
   const bucket = await requireOwner(userId, bucketId);
 
-  const user = await findUserByUsername(payload.username);
+  const user = await userRepository.findUserByUsername(payload.username);
   if (!user) {
-    throw new AppError("User not found", 404, "USER_NOT_FOUND");
+    throw new AppError(USER_ERRORS.NOT_FOUND, 404, ERROR_CODES.USER_NOT_FOUND);
   }
   const targetId = user._id.toString();
   if (bucket.members.some((m) => m.userId.toString() === targetId)) {
-    throw new AppError("User is already a member of this bucket", 409, "ALREADY_MEMBER");
+    throw new AppError(BUCKET_ERRORS.ALREADY_MEMBER_BUCKET, 409, ERROR_CODES.ALREADY_MEMBER);
   }
 
-  const updated = await addBucketMember(bucketId, {
+  const updated = await bucketRepository.addBucketMember(bucketId, {
     userId: targetId,
     role: "member",
     status: "pending",
     invitedBy: userId,
     invitedAt: new Date(),
   });
+  if (!updated) {
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
+  }
 
   await logAuditEvent({
     actorId: userId,
     bucketId,
-    action: "invite",
-    entity: "bucket-member",
+    action: AUDIT_ACTIONS.INVITE,
+    entity: AUDIT_ENTITIES.MEMBER,
     entityId: bucketId,
     note: `Invited @${user.username} to ${bucket.name}`,
     metadata: { targetUserId: targetId },
   });
 
-  return toDetail(updated!);
+  return toDetail(updated);
 }
 
-export async function acceptInviteService(userId: string, bucketId: string): Promise<BucketDetail> {
+async function acceptInvite(userId: string, bucketId: string): Promise<BucketDetail> {
   const bucketDoc = await requirePendingMember(userId, bucketId);
   const member = bucketDoc.members.find((m) => m.userId.toString() === userId);
   // self-requested pending must be approved by owner, not self-accepted
   if (member?.invitedBy && member.invitedBy.toString() === userId) {
-    throw new AppError("Your request is pending owner approval", 403, "REQUEST_PENDING");
+    throw new AppError(BUCKET_ERRORS.REQUEST_PENDING, 403, ERROR_CODES.REQUEST_PENDING);
   }
-  const bucket = await acceptBucketMember(bucketId, userId, new Date());
+  const bucket = await bucketRepository.acceptBucketMember(bucketId, userId, new Date());
+  if (!bucket) {
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
+  }
 
   await logAuditEvent({
     actorId: userId,
     bucketId,
-    action: "accept",
-    entity: "bucket-member",
+    action: AUDIT_ACTIONS.ACCEPT,
+    entity: AUDIT_ENTITIES.MEMBER,
     entityId: bucketId,
-    note: `Joined bucket "${bucket!.name}"`,
+    note: `Joined bucket "${bucket.name}"`,
   });
 
-  return toDetail(bucket!);
+  return toDetail(bucket);
 }
 
-export async function declineInviteService(
-  userId: string,
-  bucketId: string,
-): Promise<BucketSummary> {
+async function declineInvite(userId: string, bucketId: string): Promise<BucketSummary> {
   const bucket = await requirePendingMember(userId, bucketId);
-  await pullBucketMember(bucketId, userId);
+  await bucketRepository.pullBucketMember(bucketId, userId);
 
   await logAuditEvent({
     actorId: userId,
     bucketId,
-    action: "decline",
-    entity: "bucket-member",
+    action: AUDIT_ACTIONS.DECLINE,
+    entity: AUDIT_ENTITIES.MEMBER,
     entityId: bucketId,
     note: `Declined invite to "${bucket.name}"`,
   });
@@ -334,30 +243,26 @@ export async function declineInviteService(
   };
 }
 
-export async function leaveBucketService(userId: string, bucketId: string) {
-  const bucket = await findBucketById(bucketId);
+async function leaveBucket(userId: string, bucketId: string) {
+  const bucket = await bucketRepository.findBucketById(bucketId);
   if (!bucket) {
-    throw new AppError("Bucket not found", 404, "NOT_FOUND");
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   const member = bucket.members.find((m) => m.userId.toString() === userId);
   if (!member || member.status !== "accepted") {
-    throw new AppError("Not a member of this bucket", 403, "NOT_A_MEMBER");
+    throw new AppError(BUCKET_ERRORS.NOT_MEMBER, 403, ERROR_CODES.NOT_A_MEMBER);
   }
   if (member.role === "owner") {
-    throw new AppError(
-      "Owner cannot leave the bucket. Delete the bucket instead.",
-      400,
-      "OWNER_CANNOT_LEAVE",
-    );
+    throw new AppError(BUCKET_ERRORS.OWNER_CANNOT_LEAVE, 400, ERROR_CODES.OWNER_CANNOT_LEAVE);
   }
 
-  await pullBucketMember(bucketId, userId);
+  await bucketRepository.pullBucketMember(bucketId, userId);
 
   await logAuditEvent({
     actorId: userId,
     bucketId,
-    action: "leave",
-    entity: "bucket-member",
+    action: AUDIT_ACTIONS.LEAVE,
+    entity: AUDIT_ENTITIES.MEMBER,
     entityId: bucketId,
     note: `Left bucket "${bucket.name}"`,
   });
@@ -365,43 +270,43 @@ export async function leaveBucketService(userId: string, bucketId: string) {
   return { message: "Left the bucket" };
 }
 
-export async function revokeInviteService(
+async function revokeInvite(
   userId: string,
   bucketId: string,
   targetUserId: string,
 ): Promise<BucketDetail> {
   const bucket = await requireOwner(userId, bucketId);
   if (!bucket.members.some((m) => m.userId.toString() === targetUserId)) {
-    throw new AppError("Member not found", 404, "NOT_FOUND");
+    throw new AppError(BUCKET_ERRORS.MEMBER_NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
 
-  const updated = await pullBucketMember(bucketId, targetUserId);
+  const updated = await bucketRepository.pullBucketMember(bucketId, targetUserId);
+  if (!updated) {
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
+  }
 
   await logAuditEvent({
     actorId: userId,
     bucketId,
-    action: "revoke",
-    entity: "bucket-member",
+    action: AUDIT_ACTIONS.REVOKE,
+    entity: AUDIT_ENTITIES.MEMBER,
     entityId: bucketId,
     note: `Revoked invite for member of "${bucket.name}"`,
     metadata: { targetUserId },
   });
 
-  return toDetail(updated!);
+  return toDetail(updated);
 }
 
-export async function getBucketPreviewService(
-  userId: string,
-  bucketId: string,
-): Promise<BucketPreview> {
-  const bucket = await findBucketById(bucketId);
+async function getBucketPreview(userId: string, bucketId: string): Promise<BucketPreview> {
+  const bucket = await bucketRepository.findBucketById(bucketId);
   if (!bucket) {
-    throw new AppError("Bucket not found", 404, "NOT_FOUND");
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   if (bucket.isPersonal) {
-    throw new AppError("This bucket cannot be shared", 400, "BUCKET_IS_PERSONAL");
+    throw new AppError(BUCKET_ERRORS.IS_PERSONAL, 400, ERROR_CODES.BUCKET_IS_PERSONAL);
   }
-  const users = await findUsersByIds([bucket.ownerId.toString()]);
+  const users = await bucketRepository.findUsersByIds([bucket.ownerId.toString()]);
   const owner = users[0];
   const member = bucket.members.find((m) => m.userId.toString() === userId);
   return {
@@ -417,25 +322,22 @@ export async function getBucketPreviewService(
   };
 }
 
-export async function requestToJoinService(
-  userId: string,
-  bucketId: string,
-): Promise<BucketPreview> {
-  const bucket = await findBucketById(bucketId);
+async function requestToJoin(userId: string, bucketId: string): Promise<BucketPreview> {
+  const bucket = await bucketRepository.findBucketById(bucketId);
   if (!bucket) {
-    throw new AppError("Bucket not found", 404, "NOT_FOUND");
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   if (bucket.isPersonal) {
-    throw new AppError("This bucket cannot be shared", 400, "BUCKET_IS_PERSONAL");
+    throw new AppError(BUCKET_ERRORS.IS_PERSONAL, 400, ERROR_CODES.BUCKET_IS_PERSONAL);
   }
   const existing = bucket.members.find((m) => m.userId.toString() === userId);
   if (existing) {
     if (existing.status === "accepted") {
-      throw new AppError("You are already a member", 409, "ALREADY_MEMBER");
+      throw new AppError(BUCKET_ERRORS.ALREADY_MEMBER_SELF, 409, ERROR_CODES.ALREADY_MEMBER);
     }
-    throw new AppError("Request already pending", 409, "ALREADY_PENDING");
+    throw new AppError(BUCKET_ERRORS.ALREADY_PENDING, 409, ERROR_CODES.ALREADY_PENDING);
   }
-  await addBucketMember(bucketId, {
+  await bucketRepository.addBucketMember(bucketId, {
     userId,
     role: "member",
     status: "pending",
@@ -446,22 +348,20 @@ export async function requestToJoinService(
   await logAuditEvent({
     actorId: userId,
     bucketId,
-    action: "request",
-    entity: "bucket-member",
+    action: AUDIT_ACTIONS.REQUEST,
+    entity: AUDIT_ENTITIES.MEMBER,
     entityId: bucketId,
     note: `Requested to join "${bucket.name}"`,
     metadata: { targetUserId: userId },
   });
 
   // also notify owner via same audit stream; owner sees it in audit logs
-  const preview = await getBucketPreviewService(userId, bucketId);
+  const preview = await getBucketPreview(userId, bucketId);
   return preview;
 }
 
-export async function listIncomingRequestsService(
-  userId: string,
-): Promise<IncomingRequestsGroup[]> {
-  const buckets = await listOwnerPendingRequests(userId);
+async function listIncomingRequests(userId: string): Promise<IncomingRequestsGroup[]> {
+  const buckets = await bucketRepository.listOwnerPendingRequests(userId);
   if (buckets.length === 0) return [];
   // only self-requested pending (invitedBy === userId of the pending member) are join requests
   const isJoinRequest = (m: {
@@ -476,7 +376,7 @@ export async function listIncomingRequestsService(
     ),
   ];
   if (pendingUserIds.length === 0) return [];
-  const users = await findUsersByIds(pendingUserIds);
+  const users = await bucketRepository.findUsersByIds(pendingUserIds);
   const userById = new Map(users.map((u) => [u._id.toString(), u]));
   return buckets
     .map((bucket) => ({
@@ -496,7 +396,7 @@ export async function listIncomingRequestsService(
     .filter((g) => g.requests.length > 0);
 }
 
-export async function acceptRequestService(
+async function acceptRequest(
   ownerId: string,
   bucketId: string,
   targetUserId: string,
@@ -504,55 +404,70 @@ export async function acceptRequestService(
   const bucket = await requireOwner(ownerId, bucketId);
   const member = bucket.members.find((m) => m.userId.toString() === targetUserId);
   if (!member) {
-    throw new AppError("Request not found", 404, "NOT_FOUND");
+    throw new AppError(BUCKET_ERRORS.REQUEST_NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   if (member.status !== "pending") {
-    throw new AppError("User is already a member", 409, "ALREADY_MEMBER");
+    throw new AppError(BUCKET_ERRORS.ALREADY_MEMBER, 409, ERROR_CODES.ALREADY_MEMBER);
   }
   // only self-requested joins (invitedBy === target) are approvable here; owner invites are accepted by the invitee
   if (member.invitedBy && member.invitedBy.toString() !== targetUserId) {
-    throw new AppError("Only join requests can be approved here", 400, "NOT_JOIN_REQUEST");
+    throw new AppError(BUCKET_ERRORS.NOT_JOIN_REQUEST, 400, ERROR_CODES.NOT_JOIN_REQUEST);
   }
-  const updated = await acceptBucketMember(bucketId, targetUserId, new Date());
+  const updated = await bucketRepository.acceptBucketMember(bucketId, targetUserId, new Date());
+  if (!updated) {
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
+  }
   await logAuditEvent({
     actorId: ownerId,
     bucketId,
-    action: "accept",
-    entity: "bucket-member",
+    action: AUDIT_ACTIONS.ACCEPT,
+    entity: AUDIT_ENTITIES.MEMBER,
     entityId: bucketId,
     note: `Approved join request for "${bucket.name}"`,
     metadata: { targetUserId },
   });
-  return toDetail(updated!);
+  return toDetail(updated);
+}
+
+async function searchBuckets(userId: string, searchRequest: unknown) {
+  const parsed = bucketSearchSchema.parse(searchRequest ?? {});
+  const defaults = defaultBucketSearchRequest();
+
+  const request: BucketSearchRequest = {
+    filterCriteria: { ...defaults.filterCriteria, ...parsed.filterCriteria },
+    sortCriteria: parsed.sortCriteria ?? defaults.sortCriteria,
+    pagination: parsed.pagination ?? defaults.pagination,
+  };
+  return bucketRepository.searchBuckets(userId, request);
 }
 
 async function requireOwner(userId: string, bucketId: string): Promise<BucketDoc> {
-  const bucket = await findBucketById(bucketId);
+  const bucket = await bucketRepository.findBucketById(bucketId);
   if (!bucket) {
-    throw new AppError("Bucket not found", 404, "NOT_FOUND");
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   const member = bucket.members.find((m) => m.userId.toString() === userId);
   if (!member || member.role !== "owner") {
-    throw new AppError("Only the bucket owner can perform this action", 403, "OWNER_ONLY");
+    throw new AppError(BUCKET_ERRORS.OWNER_ONLY, 403, ERROR_CODES.OWNER_ONLY);
   }
   if (bucket.isPersonal) {
     throw new AppError(
-      "This action is not allowed on the personal bucket",
+      BUCKET_ERRORS.PERSONAL_ACTION_NOT_ALLOWED,
       400,
-      "BUCKET_IS_PERSONAL",
+      ERROR_CODES.BUCKET_IS_PERSONAL,
     );
   }
   return bucket;
 }
 
 async function requirePendingMember(userId: string, bucketId: string): Promise<BucketDoc> {
-  const bucket = await findBucketById(bucketId);
+  const bucket = await bucketRepository.findBucketById(bucketId);
   if (!bucket) {
-    throw new AppError("Bucket not found", 404, "NOT_FOUND");
+    throw new AppError(BUCKET_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   const member = bucket.members.find((m) => m.userId.toString() === userId);
   if (!member || member.status !== "pending") {
-    throw new AppError("You were not invited to this bucket", 403, "NOT_INVITED");
+    throw new AppError(BUCKET_ERRORS.NOT_INVITED, 403, ERROR_CODES.NOT_INVITED);
   }
   return bucket;
 }
@@ -572,7 +487,9 @@ function toSummary(bucket: BucketDoc, userId: string): BucketSummary {
 }
 
 async function toDetail(bucket: BucketDoc): Promise<BucketDetail> {
-  const users = await findUsersByIds(bucket.members.map((m) => m.userId.toString()));
+  const users = await bucketRepository.findUsersByIds(
+    bucket.members.map((m) => m.userId.toString()),
+  );
   const userById = new Map(users.map((u) => [u._id.toString(), u]));
 
   const owner = bucket.members.find((m) => m.role === "owner");
@@ -606,21 +523,29 @@ async function toDetail(bucket: BucketDoc): Promise<BucketDetail> {
 function defaultBucketSearchRequest(): BucketSearchRequest {
   return {
     filterCriteria: {
-      datePreset: "THIS_MONTH",
-      ownerPreset: "ALL",
+      date: { preset: "THIS_MONTH" },
     },
     sortCriteria: { field: "createdAt", direction: "DESC" },
     pagination: { page: 1, pageSize: 20 },
   };
 }
 
-export async function searchBucketsService(userId: string, searchRequest: unknown) {
-  const parsed = bucketSearchSchema.parse(searchRequest ?? {});
+const bucketService = {
+  listBuckets,
+  createBucket,
+  getBucketStats,
+  updateBucket,
+  deleteBucket,
+  inviteUser,
+  acceptInvite,
+  declineInvite,
+  leaveBucket,
+  revokeInvite,
+  getBucketPreview,
+  requestToJoin,
+  listIncomingRequests,
+  acceptRequest,
+  searchBuckets,
+};
 
-  const request: BucketSearchRequest = {
-    filterCriteria: parsed.filterCriteria ?? defaultBucketSearchRequest().filterCriteria,
-    sortCriteria: parsed.sortCriteria ?? defaultBucketSearchRequest().sortCriteria,
-    pagination: parsed.pagination ?? defaultBucketSearchRequest().pagination,
-  };
-  return searchBuckets(userId, request);
-}
+export default bucketService;

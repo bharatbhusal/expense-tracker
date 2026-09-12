@@ -5,7 +5,7 @@ import { FiArrowDown, FiArrowUp } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { FilterSection } from "./section";
-import type { SortDirection } from "@/types/search.types";
+import type { SortDirection } from "@/constants/types/search.types";
 
 export type SortField = { value: string; label: string };
 
@@ -29,7 +29,11 @@ export function SortSection({
   return (
     <FilterSection title="Sort" onClear={onClear} defaultOpen={defaultOpen}>
       <div className="flex items-center gap-2">
-        <Select value={field} onChange={(e) => onChange({ field: e.target.value, direction })}>
+        <Select
+          aria-label="Sort field"
+          value={field}
+          onChange={(e) => onChange({ field: e.target.value, direction })}
+        >
           {fields.map((f) => (
             <option key={f.value} value={f.value}>
               {f.label}
@@ -50,9 +54,9 @@ export function SortSection({
           className="shrink-0"
         >
           {direction === "ASC" ? (
-            <FiArrowUp className="h-4 w-4" />
+            <FiArrowUp aria-hidden="true" className="h-4 w-4" />
           ) : (
-            <FiArrowDown className="h-4 w-4" />
+            <FiArrowDown aria-hidden="true" className="h-4 w-4" />
           )}
         </Button>
       </div>

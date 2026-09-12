@@ -109,7 +109,7 @@ export const config = {
     "/categories/:path*",
     "/logs",
     "/auth/:path*",
-    "/settings",
+    "/more",
     "/buckets/:path*",
     "/budgets/:path*",
     "/budgets",

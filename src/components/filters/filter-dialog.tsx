@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ConfirmDialog, Modal } from "@/components/modals/dialog";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ import {
   type FilterVariant,
   type SectionFlags,
 } from "./variants";
-import type { SortCriteria } from "@/types/search.types";
+import type { SortCriteria } from "@/constants/types/search.types";
 
 type FilterDialogProps = {
   variant: FilterVariant;
@@ -50,17 +50,22 @@ export function FilterDialog({
   const [confirmClear, setConfirmClear] = useState(false);
 
   const [draft, setDraft] = useState({
-    open,
     criteria: state.filterCriteria as DraftCriteria,
     sort: sortForVariant(variant, state.sortCriteria),
   });
-  if (draft.open !== open) {
-    setDraft({
-      open,
-      criteria: state.filterCriteria as DraftCriteria,
-      sort: sortForVariant(variant, state.sortCriteria),
-    });
-  }
+  // ponytail: re-sync the draft when the dialog opens — in an effect, never
+  // setState during render. The transition guard keeps store updates from
+  // clobbering in-progress edits while open.
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      setDraft({
+        criteria: state.filterCriteria as DraftCriteria,
+        sort: sortForVariant(variant, state.sortCriteria),
+      });
+    }
+    wasOpen.current = open;
+  }, [open, state.filterCriteria, state.sortCriteria, variant]);
   const { criteria, sort } = draft;
   const setCriteria = (updater: (c: DraftCriteria) => DraftCriteria) =>
     setDraft((d) => ({ ...d, criteria: updater(d.criteria) }));
@@ -71,51 +76,40 @@ export function FilterDialog({
     open && (sections.buckets || sections.categories),
     buckets,
   );
-  // effective ids for scoped owners (ids-only, empty => all? keep legacy compat)
+  // effective ids for scoped owners (empty MULTIPLE => all, keep legacy compat)
   const effectiveBucketIdsForOwners = (() => {
-    const preset = (criteria as any).bucketPreset;
-    const ids = (criteria as any).bucketIds as string[] | undefined;
-    if (preset === "PERSONAL") {
-      const pid = buckets.find((b) => b.isPersonal)?._id;
-      return pid ? [pid] : (ids ?? []);
-    }
-    if (preset === "ALL") return buckets.map((b) => b._id);
-    if (ids && ids.length > 0) return ids;
-    // legacy empty MULTIPLE or ALL without preset => treat as all
-    return buckets.map((b) => b._id);
-  })();
-
-  const scoped = useScopedOptions(
-    open && sections.owners,
-    buckets,
-    undefined,
-    effectiveBucketIdsForOwners,
-  );
-
-  const patch = (next: Partial<DraftCriteria>) => setCriteria((c) => ({ ...c, ...next }));
-
-  // helpers to normalize draft ids to explicit lists (ids-only, no preset)
-  const effectiveBucketIds = (() => {
-    const preset = (criteria as any).bucketPreset;
-    const ids = (criteria as any).bucketIds as string[] | undefined;
-    if (preset === "PERSONAL") {
+    const bucket = (criteria as any).bucket as { preset: string; ids?: string[] } | undefined;
+    if (bucket?.preset === "PERSONAL") {
       const pid = buckets.find((b) => b.isPersonal)?._id;
       return pid ? [pid] : [];
     }
-    if (preset === "ALL") return buckets.map((b) => b._id);
-    if (ids && ids.length > 0) return ids;
-    // ids-only empty => none? but for initial legacy state (empty+ALL) we mapped above; fallback to personal
-    if (buckets.length > 0 && (!ids || ids.length === 0) && preset === undefined) {
-      // treat empty ids as all buckets for display before user interacts
-      return buckets.map((b) => b._id);
+    if (!bucket || bucket.preset === "ALL") return buckets.map((b) => b._id);
+    if (bucket.ids && bucket.ids.length > 0) return bucket.ids;
+    return buckets.map((b) => b._id);
+  })();
+
+  const scoped = useScopedOptions(open && sections.owners, buckets, {
+    preset: "MULTIPLE",
+    ids: effectiveBucketIdsForOwners,
+  });
+
+  const patch = (next: Partial<DraftCriteria>) => setCriteria((c) => ({ ...c, ...next }));
+
+  // helpers to normalize draft selections to explicit id lists
+  const effectiveBucketIds = (() => {
+    const bucket = (criteria as any).bucket as { preset: string; ids?: string[] } | undefined;
+    if (bucket?.preset === "PERSONAL") {
+      const pid = buckets.find((b) => b.isPersonal)?._id;
+      return pid ? [pid] : [];
     }
-    return ids ?? [];
+    if (!bucket || bucket.preset === "ALL") return buckets.map((b) => b._id);
+    if (bucket.ids && bucket.ids.length > 0) return bucket.ids;
+    return buckets.map((b) => b._id);
   })();
 
   const effectiveCategoryIds = (() => {
-    const preset = (criteria as any).categoryPreset;
-    const ids = (criteria as any).categoryIds as string[] | undefined;
-    if (preset === "ALL") {
+    const category = (criteria as any).category as { preset: string; ids?: string[] } | undefined;
+    if (!category || category.preset === "ALL") {
       return [
         ...new Set(
           Object.values(allBucketCats.categoriesByBucket)
@@ -124,15 +118,14 @@ export function FilterDialog({
         ),
       ];
     }
-    return ids ?? [];
+    return category.ids ?? [];
   })();
 
   const effectiveOwnerIds = (() => {
-    const preset = (criteria as any).ownerPreset;
-    const ids = (criteria as any).ownerIds as string[] | undefined;
-    if (preset === "ME") return authUser?.id ? [authUser.id] : [];
-    if (preset === "ALL") return scoped.owners.map((o) => o.id);
-    return ids ?? [];
+    const owner = (criteria as any).owner as { preset: string; ids?: string[] } | undefined;
+    if (owner?.preset === "ME") return authUser?.id ? [authUser.id] : [];
+    if (!owner || owner.preset === "ALL") return scoped.owners.map((o) => o.id);
+    return owner.ids ?? [];
   })();
 
   const bucketCategoryLoading = allBucketCats.isLoading || scoped.isLoading;
@@ -165,13 +158,7 @@ export function FilterDialog({
       );
     }
     if (sections.date && actions.setDateFilter) {
-      dispatch(
-        actions.setDateFilter({
-          preset: criteria.datePreset,
-          customFrom: criteria.customFrom,
-          customTo: criteria.customTo,
-        }),
-      );
+      dispatch(actions.setDateFilter({ date: criteria.date }));
     }
     if (sections.search && actions.setSearch) {
       dispatch(actions.setSearch(criteria.q));
@@ -219,19 +206,15 @@ export function FilterDialog({
     const personalId = buckets.find((b) => b.isPersonal)?._id ?? buckets[0]?._id;
     if (!personalId) {
       patch({
-        bucketPreset: "MULTIPLE" as any,
-        bucketIds: [] as any,
-        categoryPreset: "MULTIPLE" as any,
-        categoryIds: [] as any,
+        bucket: { preset: "MULTIPLE", ids: [] },
+        category: { preset: "MULTIPLE", ids: [] },
       });
       return;
     }
     const personalCatIds = (allBucketCats.categoriesByBucket[personalId] ?? []).map((c) => c._id);
     patch({
-      bucketPreset: "MULTIPLE" as any,
-      bucketIds: [personalId] as any,
-      categoryPreset: "MULTIPLE" as any,
-      categoryIds: personalCatIds as any,
+      bucket: { preset: "MULTIPLE", ids: [personalId] },
+      category: { preset: "MULTIPLE", ids: personalCatIds },
     });
   };
 
@@ -256,10 +239,10 @@ export function FilterDialog({
               ownerIds={effectiveOwnerIds}
               owners={scoped.owners}
               isLoading={scoped.isLoading}
-              onChange={(ids) => patch({ ownerPreset: "MULTIPLE" as any, ownerIds: ids as any })}
+              onChange={(ids) => patch({ owner: { preset: "MULTIPLE", ids } })}
               onClear={() => {
                 const meId = authUser?.id;
-                patch({ ownerPreset: "MULTIPLE" as any, ownerIds: (meId ? [meId] : []) as any });
+                patch({ owner: { preset: "MULTIPLE", ids: meId ? [meId] : [] } });
               }}
             />
           ) : null}
@@ -272,32 +255,17 @@ export function FilterDialog({
               categoriesByBucket={allBucketCats.categoriesByBucket}
               isLoading={bucketCategoryLoading}
               categoriesEnabled={!!sections.categories}
-              onBucketIdsChange={(ids) =>
-                patch({ bucketPreset: "MULTIPLE" as any, bucketIds: ids as any })
-              }
-              onCategoryIdsChange={(ids) =>
-                patch({ categoryPreset: "MULTIPLE" as any, categoryIds: ids as any })
-              }
+              onBucketIdsChange={(ids) => patch({ bucket: { preset: "MULTIPLE", ids } })}
+              onCategoryIdsChange={(ids) => patch({ category: { preset: "MULTIPLE", ids } })}
               onClear={handleBucketCategoryClear}
             />
           ) : null}
 
           {sections.date ? (
             <DateFilterSection
-              preset={criteria.datePreset}
-              customFrom={criteria.customFrom}
-              customTo={criteria.customTo}
-              onChange={({ preset, customFrom, customTo }) =>
-                setCriteria((c) => ({ ...c, datePreset: preset, customFrom, customTo }))
-              }
-              onClear={() =>
-                setCriteria((c) => ({
-                  ...c,
-                  datePreset: "THIS_MONTH",
-                  customFrom: undefined,
-                  customTo: undefined,
-                }))
-              }
+              value={criteria.date}
+              onChange={(date) => setCriteria((c) => ({ ...c, date }))}
+              onClear={() => setCriteria((c) => ({ ...c, date: { preset: "THIS_MONTH" } }))}
               defaultOpen={true}
             />
           ) : null}

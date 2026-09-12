@@ -3,7 +3,8 @@ import { Card } from "@/components/ui/card";
 
 export default function ExpenseDetailLoading() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role="status" aria-live="polite" aria-busy="true">
+      <span className="sr-only">Loading expense details…</span>
       <Skeleton className="h-10 w-52" />
       <Card>
         <div className="flex justify-between mb-4">

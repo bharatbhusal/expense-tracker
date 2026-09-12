@@ -30,6 +30,7 @@ export function FilterSection({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
           className="flex flex-1 items-center gap-2 text-left"
         >
           <h3 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
@@ -37,9 +38,9 @@ export function FilterSection({
             {isLoading ? <Spinner className="h-3 w-3" /> : null}
           </h3>
           {open ? (
-            <FiChevronUp className="h-4 w-4 text-[var(--color-muted)]" />
+            <FiChevronUp aria-hidden="true" className="h-4 w-4 text-[var(--color-muted)]" />
           ) : (
-            <FiChevronDown className="h-4 w-4 text-[var(--color-muted)]" />
+            <FiChevronDown aria-hidden="true" className="h-4 w-4 text-[var(--color-muted)]" />
           )}
         </button>
         <Button

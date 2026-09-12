@@ -1,4 +1,4 @@
-import { CategoryManager } from "@/features/categories/components/category-manager";
+import { CategoryManager } from "@/features/categories/category-manager";
 
 export const metadata = {
   title: "Categories",

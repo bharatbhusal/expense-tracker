@@ -1,4 +1,4 @@
-import { CategoryDetailView } from "@/features/categories/components/category-detail-view";
+import { CategoryDetailView } from "@/features/categories/category-detail-view";
 
 export const metadata = {
   title: "Category Details",

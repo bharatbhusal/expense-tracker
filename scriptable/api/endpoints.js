@@ -25,9 +25,10 @@ module.exports = {
 function overview({ bucketId } = {}) {
   const body = {
     filterCriteria: {
-      datePreset: "THIS_MONTH",
-      bucketPreset: bucketId ? "MULTIPLE" : "PERSONAL",
-      bucketIds: bucketId ? [bucketId] : [],
+      date: { preset: "THIS_MONTH" },
+      bucket: bucketId ? { preset: "MULTIPLE", ids: [bucketId] } : { preset: "PERSONAL" },
+      category: { preset: "ALL" },
+      owner: { preset: "ALL" },
     },
   };
   return request("/expenses/overview", { method: "POST", body }).then((rows) => {
@@ -55,9 +56,9 @@ function overview({ bucketId } = {}) {
 function categoriesWithStats({ bucketId } = {}) {
   const body = {
     filterCriteria: {
-      datePreset: "THIS_MONTH",
-      bucketPreset: bucketId ? "MULTIPLE" : "PERSONAL",
-      bucketIds: bucketId ? [bucketId] : [],
+      date: { preset: "THIS_MONTH" },
+      bucket: bucketId ? { preset: "MULTIPLE", ids: [bucketId] } : { preset: "PERSONAL" },
+      owner: { preset: "ALL" },
     },
     sortCriteria: { field: "amount", direction: "DESC" },
   };
@@ -85,9 +86,10 @@ function categoriesWithStats({ bucketId } = {}) {
 function expenses({ pageSize = 6, page = 1, bucketId } = {}) {
   const body = {
     filterCriteria: {
-      datePreset: "THIS_MONTH",
-      bucketPreset: bucketId ? "MULTIPLE" : "PERSONAL",
-      bucketIds: bucketId ? [bucketId] : [],
+      date: { preset: "THIS_MONTH" },
+      bucket: bucketId ? { preset: "MULTIPLE", ids: [bucketId] } : { preset: "PERSONAL" },
+      category: { preset: "ALL" },
+      owner: { preset: "ALL" },
     },
     sortCriteria: { field: "paidAt", direction: "DESC" },
     pagination: { page, pageSize },
@@ -109,7 +111,7 @@ function expenses({ pageSize = 6, page = 1, bucketId } = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 function buckets({ page = 1, pageSize = 4 } = {}) {
   const body = {
-    filterCriteria: { datePreset: "THIS_MONTH" },
+    filterCriteria: { date: { preset: "THIS_MONTH" } },
     sortCriteria: { field: "createdAt", direction: "DESC" },
     pagination: { page, pageSize },
   };

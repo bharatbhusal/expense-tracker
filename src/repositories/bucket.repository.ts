@@ -1,12 +1,11 @@
 import { Types } from "mongoose";
 
-import { buildBucketQuery } from "@/lib/query-builders";
-import { toIsoBoundsForPreset } from "@/lib/date-range";
+import { applyDateFilter, applyOwnerFilter, buildBucketQuery } from "@/lib/query-builders";
 import { BucketModel } from "@/models/Bucket";
 import { ExpenseModel } from "@/models/Expense";
 import { UserModel } from "@/models/User";
-import type { BucketSearchRequest, SearchResult } from "@/types/search.types";
-import type { BucketSummary } from "@/types/bucket.types";
+import type { BucketSearchRequest, SearchResult } from "@/constants/types/search.types";
+import type { BucketSummary } from "@/constants/types/bucket.types";
 
 export type BucketMemberDoc = {
   userId: Types.ObjectId;
@@ -47,6 +46,22 @@ export async function listBucketsForMember(userId: string) {
     },
   }).lean();
   return buckets as unknown as BucketDoc[];
+}
+
+export async function isMember(userId: string, bucketId: string): Promise<boolean> {
+  if (!Types.ObjectId.isValid(bucketId)) {
+    return false;
+  }
+
+  return !!(await BucketModel.exists({
+    _id: bucketId,
+    members: {
+      $elemMatch: {
+        userId: new Types.ObjectId(userId),
+        status: "accepted",
+      },
+    },
+  }));
 }
 
 export async function listBucketsForPendingMember(userId: string) {
@@ -290,19 +305,35 @@ function buildExpenseMatch(
   filters: BucketSearchRequest["filterCriteria"],
 ): Record<string, unknown> {
   const match: Record<string, unknown> = {};
-  if (filters.ownerPreset === "ME") {
-    match.userId = new Types.ObjectId(userId);
-  } else if (filters.ownerPreset === "MULTIPLE") {
-    match.userId = {
-      $in: (filters.ownerIds ?? []).map((id) => new Types.ObjectId(id)),
-    };
+  if (filters.owner) {
+    applyOwnerFilter(match, "userId", { userId }, filters.owner);
   }
-  const bounds = toIsoBoundsForPreset(filters.datePreset, filters.customFrom, filters.customTo);
-  if (bounds) {
-    match.paidAt = {
-      ...(bounds.from ? { $gte: new Date(bounds.from) } : {}),
-      ...(bounds.to ? { $lte: new Date(bounds.to) } : {}),
-    };
-  }
+  applyDateFilter(match, "paidAt", filters.date);
   return match;
 }
+
+// ponytail: ExpenseModel/UserModel reads above are stats/read-models only
+// (expense existence, filtered totals, member display names) — writes stay
+// on BucketModel, so this repository owns no cross-model invariants.
+// Named exports are kept for category/auth/user/expense services (out of
+// scope); bucket.service uses the default object, matching expense.repository.
+const bucketRepository = {
+  listBucketsForMember,
+  isMember,
+  listBucketsForPendingMember,
+  findBucketById,
+  createBucket,
+  updateBucketName,
+  deleteBucket,
+  addBucketMember,
+  acceptBucketMember,
+  pullBucketMember,
+  expenseExistsInBucket,
+  getFilteredBucketExpenseStats,
+  findUsersByIds,
+  findBucketByUserId,
+  listOwnerPendingRequests,
+  searchBuckets,
+};
+
+export default bucketRepository;

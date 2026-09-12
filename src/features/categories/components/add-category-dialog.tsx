@@ -1,7 +1,7 @@
 "use client";
 
 import { Modal } from "@/components/modals/dialog";
-import { CategoryForm } from "@/features/categories/components/category-form";
+import { CategoryForm } from "@/features/categories/category-form";
 
 type Props = {
   open: boolean;

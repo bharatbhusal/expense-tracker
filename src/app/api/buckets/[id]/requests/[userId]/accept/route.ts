@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { connectToDatabase } from "@/lib/db";
-import { acceptRequest } from "@/controllers/bucket.controller";
+import bucketController from "@/controllers/bucket.controller";
 
 export async function POST(
   request: NextRequest,
@@ -10,7 +10,7 @@ export async function POST(
 ) {
   try {
     await connectToDatabase();
-    const data = await acceptRequest(request, context);
+    const data = await bucketController.acceptRequest(request, context);
     return successResponse(data);
   } catch (error) {
     return errorResponse(error);

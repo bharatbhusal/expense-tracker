@@ -20,14 +20,14 @@ export default async function UnauthorizedPage({
   return (
     <div className="mx-auto mt-20 max-w-md text-center">
       <h1 className="text-2xl font-semibold">Access denied</h1>
-      <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+      <p className="mt-2 text-sm text-[var(--color-muted)]">
         You don&apos;t have access to this {label}.
       </p>
-      <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="mt-2 text-xs text-[var(--color-muted)]">
         It belongs to a shared bucket you are not part of. Ask its owner to add you, or check that
         the link is correct.
       </p>
-      <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="mt-2 text-xs text-[var(--color-muted)]">
         You can still explore your own expenses and categories from the dashboard.
       </p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">

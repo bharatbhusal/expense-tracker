@@ -72,7 +72,11 @@ function FormLabel({ className, ...props }: React.ComponentProps<typeof Label>) 
   const { error, formItemId } = useFormField();
 
   return (
-    <Label className={cn(error && "text-red-600", className)} htmlFor={formItemId} {...props} />
+    <Label
+      className={cn(error && "text-[var(--color-danger)]", className)}
+      htmlFor={formItemId}
+      {...props}
+    />
   );
 }
 
@@ -110,7 +114,12 @@ function FormMessage({ className, children, ...props }: React.ComponentProps<"p"
   }
 
   return (
-    <p id={formMessageId} className={cn("text-xs font-medium text-red-600", className)} {...props}>
+    <p
+      id={formMessageId}
+      role="alert"
+      className={cn("text-xs font-medium text-[var(--color-danger)]", className)}
+      {...props}
+    >
       {body}
     </p>
   );

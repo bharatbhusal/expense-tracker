@@ -4,9 +4,9 @@ import type {
   BudgetItem,
   CreateBudgetPayload,
   UpdateBudgetPayload,
-} from "@/types/budget.types";
-import type { CategoryItem } from "@/types/expense.types";
-import type { SearchResult } from "@/types/search.types";
+} from "@/constants/types/budget.types";
+import type { CategoryItem } from "@/constants/types/expense.types";
+import type { SearchResult } from "@/constants/types/search.types";
 
 export const budgetsApi = {
   list: () => apiRequest<BudgetGroup[]>("/budgets", { method: "GET" }),
@@ -27,11 +27,9 @@ export const budgetsApi = {
       method: "POST",
       body: {
         filterCriteria: {
-          bucketPreset: "MULTIPLE",
-          bucketIds: [bucketId],
-          ownerPreset: "ALL",
-          ownerIds: [],
-          datePreset: "THIS_MONTH",
+          bucket: { preset: "MULTIPLE", ids: [bucketId] },
+          owner: { preset: "ALL" },
+          date: { preset: "THIS_MONTH" },
         },
         sortCriteria: { field: "name", direction: "ASC" },
         pagination: { page: 1, pageSize: 100 },

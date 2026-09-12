@@ -14,10 +14,13 @@ export function SearchSection({ q, onChange }: SearchSectionProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold tracking-tight">Search</h3>
+        <label htmlFor="filter-search" className="text-sm font-semibold tracking-tight">
+          Search
+        </label>
       </div>
       <div className="relative">
         <Input
+          id="filter-search"
           type="text"
           placeholder="Search..."
           value={q}
@@ -31,9 +34,9 @@ export function SearchSection({ q, onChange }: SearchSectionProps) {
             size="icon"
             aria-label="Clear search"
             onClick={() => onChange("")}
-            className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
+            className="absolute top-1/2 right-1 flex h-11 w-11 -translate-y-1/2 items-center justify-center"
           >
-            <FiX className="h-4 w-4" />
+            <FiX aria-hidden="true" className="h-4 w-4" />
           </Button>
         ) : null}
       </div>

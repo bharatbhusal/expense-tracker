@@ -1,5 +1,5 @@
 import { ALLOWED_UPLOAD_MIME_TYPES, MAX_UPLOAD_FILE_SIZE_BYTES } from "@/lib/uploads/constants";
-import type { UploadedAsset, UploadSignaturePayload } from "@/types/upload.types";
+import type { UploadedAsset, UploadSignaturePayload } from "@/constants/types/upload.types";
 
 export function validateUploadFile(file: File): string | null {
   if (!ALLOWED_UPLOAD_MIME_TYPES.includes(file.type)) {

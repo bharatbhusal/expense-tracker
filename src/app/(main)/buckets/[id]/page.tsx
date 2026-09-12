@@ -1,4 +1,4 @@
-import { BucketDetailView } from "@/features/buckets/components/bucket-detail-view";
+import { BucketDetailView } from "@/features/buckets/bucket-detail-view";
 
 export const metadata = {
   title: "Bucket Details",

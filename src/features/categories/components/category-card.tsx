@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { FiMoreVertical, FiShare2 } from "react-icons/fi";
+import { FiShare2 } from "react-icons/fi";
 import { formatCurrency } from "@/lib/format";
 import { useAppSelector } from "@/store/hooks";
 import { EmojiBadge } from "@/components/ui/emoji-badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { DropdownList } from "@/components/ui/dropdown-list";
+import { Card, CardTitle } from "@/components/ui/card";
+import { CardMenu } from "@/components/ui/card-menu";
 import { shareLink } from "@/lib/share";
-import type { CategoryItem } from "@/types/analytics.types";
+import type { CategoryItem } from "@/constants/types/analytics.types";
 
 type CategoryCardProps = {
   category: CategoryItem;
@@ -49,7 +49,9 @@ export function CategoryCard({ category, onEdit, onDelete }: CategoryCardProps) 
         <div className="flex gap-2 items-center">
           <EmojiBadge emoji={category.emoji} color={category.color} />
           <div className="flex-1 min-w-0">
-            <p className="font-medium truncate">{category.name}</p>
+            <CardTitle className="truncate" title={category.name}>
+              {category.name}
+            </CardTitle>
             <p className="text-xs text-[var(--color-muted)]">
               {category.stats?.count} expense
               {category.stats?.count !== 1 ? "s" : ""}
@@ -61,19 +63,7 @@ export function CategoryCard({ category, onEdit, onDelete }: CategoryCardProps) 
           {hasActions && (
             <>
               {isOwner ? (
-                <DropdownList
-                  value=""
-                  placeholder="Actions"
-                  trigger={<FiMoreVertical className="h-4 w-4" />}
-                  options={menuOptions}
-                  onValueChange={handleMenu}
-                  aria-label="Category actions"
-                  className="h-8 w-8 cursor-pointer shrink-0"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                />
+                <CardMenu options={menuOptions} onSelect={handleMenu} label="Category actions" />
               ) : (
                 <Button
                   variant="ghost"
@@ -109,7 +99,7 @@ export function CategoryCard({ category, onEdit, onDelete }: CategoryCardProps) 
           </div>
         )}
         {category.stats?.count >= 2 && (
-          <div className="mt-2 flex justify-between gap-2 text-sm">
+          <div className="mt-2 flex flex-wrap justify-between gap-2 text-sm">
             <div className="flex gap-1 items-center">
               <p className="text-[var(--color-muted)]">Avg:</p>
               <p className="font-medium">{formatCurrency(category.stats?.avg, currency)}</p>

@@ -3,7 +3,8 @@ import { Card } from "@/components/ui/card";
 
 export default function ExpensesLoading() {
   return (
-    <div className="space-y-4">
+    <div className="h-full space-y-4" role="status" aria-live="polite" aria-busy="true">
+      <span className="sr-only">Loading expenses…</span>
       <Card>
         <div className="flex gap-2 mb-4">
           <Skeleton className="h-10 flex-1" />

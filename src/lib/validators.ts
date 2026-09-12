@@ -1,11 +1,43 @@
 import { z } from "zod";
-
-import { HEX_COLOR_REGEX } from "@/lib/validation-constants";
+import { HEX_COLOR_REGEX, USERNAME_REGEX } from "../constants/regex";
+import { FILTER_ERRORS, SIGNUP_ERRORS } from "../constants/error-messages";
+import {
+  AUDIT_SORTABLE_FIELDS,
+  BUCKET_SORTABLE_FIELDS,
+  CATEGORY_SORTABLE_FIELDS,
+  DISTRIBUTION_DIMENSIONS,
+  EXPENSE_SORTABLE_FIELDS,
+  NON_CUSTOM_DATE_PRESETS,
+  SORT_DIRECTIONS,
+} from "../constants/filter-enums";
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  USER_NAME_MAX_LENGTH,
+  USER_NAME_MIN_LENGTH,
+  USERNAME_MAX_LENGTH,
+  USERNAME_MIN_LENGTH,
+} from "@/constants/validation";
 
 export const signupSchema = z.object({
-  name: z.string().min(2).max(255),
-  username: z.string().min(6).max(20),
-  password: z.string().min(8),
+  name: z
+    .string()
+    .trim()
+    .min(USER_NAME_MIN_LENGTH, SIGNUP_ERRORS.NAME_TOO_SHORT(USER_NAME_MIN_LENGTH))
+    .max(USER_NAME_MAX_LENGTH, SIGNUP_ERRORS.NAME_TOO_LONG(USER_NAME_MAX_LENGTH)),
+
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(USERNAME_MIN_LENGTH, SIGNUP_ERRORS.USERNAME_TOO_SHORT(USERNAME_MIN_LENGTH))
+    .max(USERNAME_MAX_LENGTH, SIGNUP_ERRORS.USERNAME_TOO_LONG(USERNAME_MAX_LENGTH))
+    .regex(USERNAME_REGEX, SIGNUP_ERRORS.USERNAME_INVALID),
+
+  password: z
+    .string()
+    .min(PASSWORD_MIN_LENGTH, SIGNUP_ERRORS.PASSWORD_TOO_SHORT(PASSWORD_MIN_LENGTH))
+    .max(PASSWORD_MAX_LENGTH, SIGNUP_ERRORS.PASSWORD_TOO_LONG(PASSWORD_MAX_LENGTH)),
 });
 
 export const loginSchema = z.object({
@@ -43,19 +75,6 @@ export const expenseSchema = z.object({
   paidAt: z.iso.datetime().optional(),
 });
 
-export const expenseFiltersSchema = z.object({
-  q: z.string().optional(),
-  categoryId: z.string().optional(),
-  from: z.iso.datetime().optional(),
-  to: z.iso.datetime().optional(),
-  amountMin: z.coerce.number().min(0).optional(),
-  amountMax: z.coerce.number().min(0).optional(),
-  sortBy: z.enum(["paidAt", "amount", "title"]).default("paidAt"),
-  order: z.enum(["asc", "desc"]).default("desc"),
-  page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(50).optional(),
-});
-
 export const bucketSchema = z.object({
   name: z.string().trim().min(1).max(50),
   icon: z.string().trim().min(1).max(8).optional(),
@@ -65,103 +84,120 @@ export const inviteSchema = z.object({
   username: z.string().trim().min(1).max(20),
 });
 
-const datePresetSchema = z.enum([
-  "TODAY",
-  "YESTERDAY",
-  "THIS_WEEK",
-  "LAST_WEEK",
-  "THIS_MONTH",
-  "LAST_MONTH",
-  "LAST_6_MONTHS",
-  "THIS_YEAR",
-  "LAST_YEAR",
-  "CUSTOM",
+const sortDirectionSchema = z.enum(SORT_DIRECTIONS);
+
+// ponytail: 24-hex check, no mongoose import needed in validation layer.
+const objectIdString = z.string().regex(/^[0-9a-fA-F]{24}$/, FILTER_ERRORS.INVALID_ID);
+
+const dateFilterSchema = z
+  .discriminatedUnion("preset", [
+    z.object({
+      preset: z.enum(NON_CUSTOM_DATE_PRESETS),
+    }),
+    z.object({
+      preset: z.literal("CUSTOM"),
+      from: z.iso.datetime(),
+      to: z.iso.datetime(),
+    }),
+  ])
+  .refine((d) => d.preset !== "CUSTOM" || new Date(d.from) <= new Date(d.to), {
+    message: FILTER_ERRORS.INVALID_DATE_RANGE,
+  });
+
+const bucketSelectionSchema = z.discriminatedUnion("preset", [
+  z.object({ preset: z.literal("PERSONAL") }),
+  z.object({ preset: z.literal("ALL") }),
+  z.object({
+    preset: z.literal("MULTIPLE"),
+    ids: z.array(objectIdString).min(1).max(100),
+  }),
 ]);
 
-const bucketPresetSchema = z.enum(["PERSONAL", "ALL", "MULTIPLE"]);
-const categoryPresetSchema = z.enum(["ALL", "MULTIPLE"]);
-const ownerPresetSchema = z.enum(["ME", "ALL", "MULTIPLE"]);
-const sortDirectionSchema = z.enum(["ASC", "DESC"]);
+const ownerSelectionSchema = z.discriminatedUnion("preset", [
+  z.object({ preset: z.literal("ME") }),
+  z.object({ preset: z.literal("ALL") }),
+  z.object({
+    preset: z.literal("MULTIPLE"),
+    ids: z.array(objectIdString).min(1).max(100),
+  }),
+]);
+
+const categorySelectionSchema = z.discriminatedUnion("preset", [
+  z.object({ preset: z.literal("ALL") }),
+  z.object({
+    preset: z.literal("MULTIPLE"),
+    ids: z.array(objectIdString).min(1).max(100),
+  }),
+]);
 
 const paginationSchema = z.object({
-  page: z.coerce.number().int().min(1).max(10).default(1),
-  pageSize: z.coerce.number().int().min(1).max(500).default(50),
+  page: z.coerce.number().int().min(1).max(1000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-const sortSchema = z.object({
-  field: z.string().default("paidAt"),
+const expenseSortSchema = z.object({
+  field: z.enum(EXPENSE_SORTABLE_FIELDS).default("paidAt"),
   direction: sortDirectionSchema.default("DESC"),
 });
 
 const categorySortSchema = z.object({
-  field: z.string().default("amount"),
+  field: z.enum(CATEGORY_SORTABLE_FIELDS).default("amount"),
+  direction: sortDirectionSchema.default("DESC"),
+});
+
+const bucketSortSchema = z.object({
+  field: z.enum(BUCKET_SORTABLE_FIELDS).default("createdAt"),
+  direction: sortDirectionSchema.default("DESC"),
+});
+
+const auditSortSchema = z.object({
+  field: z.enum(AUDIT_SORTABLE_FIELDS).default("timestamp"),
   direction: sortDirectionSchema.default("DESC"),
 });
 
 export const expenseFilterSchema = z.object({
-  bucketPreset: bucketPresetSchema.default("ALL"),
-  bucketIds: z.array(z.string()).default([]),
-  categoryPreset: categoryPresetSchema.default("ALL"),
-  categoryIds: z.array(z.string()).default([]),
-  ownerPreset: ownerPresetSchema.default("ALL"),
-  ownerIds: z.array(z.string()).default([]),
-  datePreset: datePresetSchema.default("THIS_MONTH"),
-  customFrom: z.string().optional(),
-  customTo: z.string().optional(),
+  bucket: bucketSelectionSchema.default({ preset: "ALL" }),
+  category: categorySelectionSchema.default({ preset: "ALL" }),
+  owner: ownerSelectionSchema.default({ preset: "ALL" }),
+  date: dateFilterSchema.default({ preset: "THIS_MONTH" }),
   hasNotes: z.boolean().optional(),
   hasLocation: z.boolean().optional(),
   q: z.string().trim().max(120).optional(),
 });
 
 const categoryFilterSchema = z.object({
-  bucketPreset: bucketPresetSchema.default("ALL"),
-  bucketIds: z.array(z.string()).default([]),
-  ownerPreset: ownerPresetSchema.default("ALL"),
-  ownerIds: z.array(z.string()).default([]),
-  datePreset: datePresetSchema.optional(),
-  customFrom: z.string().optional(),
-  customTo: z.string().optional(),
+  bucket: bucketSelectionSchema.default({ preset: "ALL" }),
+  owner: ownerSelectionSchema.default({ preset: "ALL" }),
+  date: dateFilterSchema.optional(),
   q: z.string().trim().max(120).optional(),
 });
 
 const auditFilterSchema = z.object({
-  bucketPreset: bucketPresetSchema.default("ALL"),
-  bucketIds: z.array(z.string()).default([]),
-  ownerPreset: ownerPresetSchema.default("ALL"),
-  ownerIds: z.array(z.string()).default([]),
-  datePreset: datePresetSchema.default("THIS_MONTH"),
-  customFrom: z.string().optional(),
-  customTo: z.string().optional(),
-});
-
-const auditSortSchema = z.object({
-  field: z.enum(["timestamp", "action", "entity"]).default("timestamp"),
-  direction: sortDirectionSchema.default("DESC"),
+  bucket: bucketSelectionSchema.default({ preset: "ALL" }),
+  owner: ownerSelectionSchema.default({ preset: "ALL" }),
+  date: dateFilterSchema.default({ preset: "THIS_MONTH" }),
 });
 
 const bucketFilterSchema = z.object({
-  datePreset: datePresetSchema.default("THIS_MONTH"),
-  customFrom: z.string().optional(),
-  customTo: z.string().optional(),
-  ownerPreset: ownerPresetSchema.default("ALL"),
-  ownerIds: z.array(z.string()).default([]),
+  date: dateFilterSchema.default({ preset: "THIS_MONTH" }),
+  owner: ownerSelectionSchema.optional(),
 });
 
 export const expenseSearchSchema = z.object({
   filterCriteria: expenseFilterSchema.optional(),
-  sortCriteria: sortSchema.optional(),
+  sortCriteria: expenseSortSchema.optional(),
   pagination: paginationSchema.optional(),
 });
 
 export const categorySearchSchema = z.object({
   filterCriteria: categoryFilterSchema.optional(),
-  sortCriteria: sortSchema.optional(),
+  sortCriteria: categorySortSchema.optional(),
   pagination: paginationSchema.optional(),
 });
 
 export const bucketSearchSchema = z.object({
   filterCriteria: bucketFilterSchema.optional(),
-  sortCriteria: sortSchema.optional(),
+  sortCriteria: bucketSortSchema.optional(),
   pagination: paginationSchema.optional(),
 });
 
@@ -180,7 +216,7 @@ export const chartOverviewSchema = z.object({
 });
 
 export const distributionSchema = z.object({
-  dimension: z.enum(["category", "owner", "bucket"]),
+  dimension: z.enum(DISTRIBUTION_DIMENSIONS),
   filterCriteria: expenseFilterSchema.optional(),
 });
 

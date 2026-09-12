@@ -9,14 +9,14 @@ import type {
   DistributionDimension,
   ExpenseSearchRequest,
   SearchResult,
-} from "@/types/search.types";
-import type { ExpenseItem } from "@/types/expense.types";
+} from "@/constants/types/search.types";
+import type { ExpenseItem } from "@/constants/types/expense.types";
 import type {
   ExpenseContribution,
   CategoryBreakdownPoint,
   DistributionPoint,
   TrendPoint,
-} from "@/types/analytics.types";
+} from "@/constants/types/analytics.types";
 
 type AggregateBucket = {
   _id: string | null;
@@ -49,7 +49,7 @@ type CategoryBucket = {
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export async function createExpense(data: {
+async function createExpense(data: {
   userId: string;
   bucketId: string;
   title: string;
@@ -69,11 +69,7 @@ export async function createExpense(data: {
   return expense.toObject();
 }
 
-export async function updateExpense(
-  userId: string,
-  expenseId: string,
-  data: Record<string, unknown>,
-) {
+async function updateExpense(userId: string, expenseId: string, data: Record<string, unknown>) {
   if (!Types.ObjectId.isValid(expenseId)) {
     return null;
   }
@@ -81,7 +77,7 @@ export async function updateExpense(
   return ExpenseModel.findOneAndUpdate({ _id: expenseId, userId }, data, { new: true, lean: true });
 }
 
-export async function deleteExpense(userId: string, expenseId: string) {
+async function deleteExpense(userId: string, expenseId: string) {
   if (!Types.ObjectId.isValid(expenseId)) {
     return null;
   }
@@ -91,7 +87,7 @@ export async function deleteExpense(userId: string, expenseId: string) {
     userId,
   }).lean();
 }
-export async function getExpenseById(expenseId: string) {
+async function getExpenseById(expenseId: string) {
   if (!Types.ObjectId.isValid(expenseId)) {
     return null;
   }
@@ -118,7 +114,7 @@ export async function getExpenseById(expenseId: string) {
   };
 }
 
-export async function getExpenseByIdForMember(expenseId: string, validBucketIds: Types.ObjectId[]) {
+async function getExpenseByIdForMember(expenseId: string, validBucketIds: Types.ObjectId[]) {
   if (!Types.ObjectId.isValid(expenseId)) {
     return null;
   }
@@ -141,11 +137,11 @@ export async function getExpenseByIdForMember(expenseId: string, validBucketIds:
     categoryColor: category.color,
   };
 }
-export async function listRecentExpenses(userId: string, limit = 5) {
+async function listRecentExpenses(userId: string, limit = 5) {
   return ExpenseModel.find({ userId }).sort({ paidAt: -1 }).limit(limit).lean();
 }
 
-export async function listExpensesForRange(
+async function listExpensesForRange(
   from: Date,
   to: Date,
   validBucketIds: Types.ObjectId[],
@@ -161,7 +157,7 @@ export async function listExpensesForRange(
   return ExpenseModel.find(filter).sort({ paidAt: 1 }).lean();
 }
 
-export async function aggregateRangeStats(userId: string, from: Date, to: Date) {
+async function aggregateRangeStats(userId: string, from: Date, to: Date) {
   const match: Record<string, unknown> = {
     userId: new Types.ObjectId(userId),
 
@@ -258,7 +254,7 @@ export async function aggregateRangeStats(userId: string, from: Date, to: Date) 
   };
 }
 
-export async function getCategoryRangeStats(
+async function getCategoryRangeStats(
   userId: string,
   categoryId: string,
   from: Date,
@@ -344,7 +340,7 @@ export async function getCategoryRangeStats(
   };
 }
 
-export async function getExpenseContribution(
+async function getExpenseContribution(
   expenseId: string,
   bucketId: Types.ObjectId,
   from?: Date,
@@ -488,16 +484,19 @@ const DISTRIBUTION_FIELD: Record<DistributionDimension, string> = {
   bucket: "$bucketId",
 };
 
-export async function getDistribution(
+async function getDistribution(
   bucketIds: Types.ObjectId[],
   dimension: DistributionDimension,
   from?: Date,
   to?: Date,
+  // ponytail: full expense filter match (bucket/category/owner/date/search/…)
+  // so distribution and search interpret filters identically.
+  filterMatch?: Record<string, unknown>,
 ): Promise<DistributionPoint[]> {
-  const match: Record<string, unknown> = {
+  const match: Record<string, unknown> = filterMatch ?? {
     bucketId: { $in: bucketIds },
   };
-  if (from || to) {
+  if (!filterMatch && (from || to)) {
     match.paidAt = {
       ...(from ? { $gte: from } : {}),
       ...(to ? { $lte: to } : {}),
@@ -556,7 +555,7 @@ export async function getDistribution(
     .sort((a, b) => b.value - a.value);
 }
 
-export async function getFilteredCategoryDistribution(
+async function getFilteredCategoryDistribution(
   query: Record<string, unknown>,
 ): Promise<CategoryBreakdownPoint[]> {
   const totals = await ExpenseModel.aggregate<{
@@ -594,7 +593,7 @@ export async function getFilteredCategoryDistribution(
     .sort((a, b) => b.value - a.value);
 }
 
-export async function getExpenseStatsForCategories(
+async function getExpenseStatsForCategories(
   categoryIds: Types.ObjectId[],
   from: Date,
   to: Date,
@@ -635,7 +634,7 @@ export async function getExpenseStatsForCategories(
   };
 }
 
-export async function getExpenseOverviewStats(match: Record<string, unknown>) {
+async function getExpenseOverviewStats(match: Record<string, unknown>) {
   const [result] = await ExpenseModel.aggregate([
     { $match: match },
     {
@@ -661,7 +660,7 @@ export async function getExpenseOverviewStats(match: Record<string, unknown>) {
   };
 }
 
-export async function getChartData(match: Record<string, unknown>, from: Date, to: Date) {
+async function getChartData(match: Record<string, unknown>, from: Date, to: Date) {
   const dayDiff = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
 
   let dateGroup: Record<string, unknown>;
@@ -750,7 +749,7 @@ function formatPeriodLabel(id: string | number, dayDiff: number): string {
   return String(id);
 }
 
-export async function searchExpenses(
+async function searchExpenses(
   userId: string,
   request: ExpenseSearchRequest,
 ): Promise<SearchResult<ExpenseItem>> {
@@ -799,3 +798,24 @@ export async function searchExpenses(
     totalPages: Math.ceil(total / request.pagination.pageSize) || 1,
   };
 }
+
+const expenseRepository = {
+  createExpense,
+  updateExpense,
+  deleteExpense,
+  getExpenseById,
+  getExpenseByIdForMember,
+  listRecentExpenses,
+  listExpensesForRange,
+  aggregateRangeStats,
+  getCategoryRangeStats,
+  getExpenseContribution,
+  getDistribution,
+  getFilteredCategoryDistribution,
+  getExpenseStatsForCategories,
+  getExpenseOverviewStats,
+  getChartData,
+  searchExpenses,
+};
+
+export default expenseRepository;

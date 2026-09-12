@@ -3,7 +3,11 @@ import { bucketsApi } from "@/lib/api/buckets";
 import { sortForVariant } from "@/components/filters/variants";
 import { bucketCriteria } from "@/lib/filters";
 import type { RootState } from "@/store";
-import type { BucketDetail, BucketSummary, IncomingRequestsGroup } from "@/types/bucket.types";
+import type {
+  BucketDetail,
+  BucketSummary,
+  IncomingRequestsGroup,
+} from "@/constants/types/bucket.types";
 
 type BucketState = {
   buckets: BucketSummary[];
@@ -39,7 +43,7 @@ export const fetchBuckets = createAsyncThunk("buckets/search", async (_, { getSt
 export const fetchAllBuckets = createAsyncThunk("buckets/searchAll", () =>
   bucketsApi
     .searchBuckets({
-      filterCriteria: { datePreset: "THIS_MONTH" },
+      filterCriteria: { date: { preset: "THIS_MONTH" } },
       sortCriteria: { field: "createdAt", direction: "DESC" },
       pagination: { page: 1, pageSize: 100 },
     })
@@ -58,7 +62,7 @@ export const fetchBucketDetail = createAsyncThunk(
 export const fetchInvitations = createAsyncThunk("buckets/fetchInvitations", () =>
   bucketsApi
     .searchBuckets({
-      filterCriteria: { datePreset: "THIS_MONTH" },
+      filterCriteria: { date: { preset: "THIS_MONTH" } },
       sortCriteria: { field: "createdAt", direction: "DESC" },
       pagination: { page: 1, pageSize: 100 },
     })

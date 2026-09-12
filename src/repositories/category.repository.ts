@@ -3,11 +3,14 @@ import { Types } from "mongoose";
 import { buildCategoryQuery } from "@/lib/query-builders";
 import { CategoryModel } from "@/models/Category";
 import { ExpenseModel } from "@/models/Expense";
-import { AppError } from "@/lib/errors";
-import type { CategorySearchRequest, SearchResult, SortCriteria } from "@/types/search.types";
-import type { CategoryItem } from "@/types/expense.types";
+import type {
+  CategorySearchRequest,
+  SearchResult,
+  SortCriteria,
+} from "@/constants/types/search.types";
+import type { CategoryItem } from "@/constants/types/expense.types";
 
-export async function createCategory(data: {
+async function createCategory(data: {
   userId: string;
   name: string;
   color: string;
@@ -21,7 +24,7 @@ export async function createCategory(data: {
   return category.toObject();
 }
 
-export async function ensureCategoryInBucket(
+async function ensureCategoryInBucket(
   userId: string,
   bucketId: string,
   data: { name: string; color: string; emoji?: string },
@@ -55,12 +58,12 @@ export async function ensureCategoryInBucket(
   }
 }
 
-export async function deleteCategoriesByBucket(bucketId: string) {
+async function deleteCategoriesByBucket(bucketId: string) {
   return CategoryModel.deleteMany({
     bucketId: new Types.ObjectId(bucketId),
   });
 }
-export async function listCategoriesWithStats(
+async function listCategoriesWithStats(
   categoryQuery: Record<string, unknown>,
   from: Date,
   to: Date,
@@ -191,7 +194,7 @@ export async function listCategoriesWithStats(
   };
 }
 
-export async function updateCategory(
+async function updateCategory(
   categoryId: string,
   bucketId: string,
   data: {
@@ -211,7 +214,7 @@ export async function updateCategory(
   });
 }
 
-export async function getCategoryById(categoryId: string, bucketId?: string | null) {
+async function getCategoryById(categoryId: string, bucketId?: string | null) {
   if (!Types.ObjectId.isValid(categoryId)) {
     return null;
   }
@@ -222,10 +225,7 @@ export async function getCategoryById(categoryId: string, bucketId?: string | nu
   }).lean();
 }
 
-export async function getCategoryByIdForMember(
-  categoryId: string,
-  validBucketIds: Types.ObjectId[],
-) {
+async function getCategoryByIdForMember(categoryId: string, validBucketIds: Types.ObjectId[]) {
   if (!Types.ObjectId.isValid(categoryId)) {
     return null;
   }
@@ -235,35 +235,29 @@ export async function getCategoryByIdForMember(
   }).lean();
 }
 
-export async function deleteCategory(categoryId: string, bucketId: string) {
+async function hasCategoryExpenses(categoryId: string, bucketId: string) {
+  if (!Types.ObjectId.isValid(categoryId)) {
+    return false;
+  }
+  return !!(await ExpenseModel.exists({ bucketId, categoryId }));
+}
+
+async function deleteCategory(categoryId: string, bucketId: string) {
   if (!Types.ObjectId.isValid(categoryId)) {
     return null;
   }
-  const hasExpenses = await ExpenseModel.exists({
-    bucketId,
-    categoryId,
-  });
-
-  if (hasExpenses) {
-    throw new AppError(
-      "Cannot delete category with existing expenses. Reassign or delete expenses first.",
-      400,
-      "HAS_EXPENSES",
-    );
-  }
-
   return CategoryModel.findOneAndDelete({
     _id: categoryId,
     bucketId,
   }).lean();
 }
 
-export async function listCategoryIds(query: Record<string, unknown>): Promise<Types.ObjectId[]> {
+async function listCategoryIds(query: Record<string, unknown>): Promise<Types.ObjectId[]> {
   const docs = await CategoryModel.find(query).select("_id").lean();
   return docs.map((d) => d._id as Types.ObjectId);
 }
 
-export async function searchCategories(
+async function searchCategories(
   userId: string,
   request: CategorySearchRequest,
 ): Promise<SearchResult<CategoryItem>> {
@@ -288,3 +282,48 @@ export async function searchCategories(
     totalPages: Math.ceil(total / request.pagination.pageSize) || 1,
   };
 }
+
+async function categoryExistsInBucket(categoryId: string, bucketId: string): Promise<boolean> {
+  if (!Types.ObjectId.isValid(categoryId) || !Types.ObjectId.isValid(bucketId)) {
+    return false;
+  }
+
+  return !!(await CategoryModel.exists({
+    _id: categoryId,
+    bucketId,
+  }));
+}
+
+const categoryRepository = {
+  createCategory,
+  ensureCategoryInBucket,
+  deleteCategoriesByBucket,
+  listCategoriesWithStats,
+  updateCategory,
+  getCategoryById,
+  getCategoryByIdForMember,
+  hasCategoryExpenses,
+  deleteCategory,
+  listCategoryIds,
+  searchCategories,
+  categoryExistsInBucket,
+};
+
+// ponytail: named re-exports keep expense/bucket/budget/auth services working
+// until their workstreams switch to the default object; drop them then.
+export {
+  createCategory,
+  ensureCategoryInBucket,
+  deleteCategoriesByBucket,
+  listCategoriesWithStats,
+  updateCategory,
+  getCategoryById,
+  getCategoryByIdForMember,
+  hasCategoryExpenses,
+  deleteCategory,
+  listCategoryIds,
+  searchCategories,
+  categoryExistsInBucket,
+};
+
+export default categoryRepository;

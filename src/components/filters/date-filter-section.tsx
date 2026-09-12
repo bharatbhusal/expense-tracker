@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { FilterSection } from "./section";
 import { presetLabel } from "@/lib/date-range";
 import { getLocalDateTimeInputValue, toUtcIsoString } from "@/lib/datetime";
-import type { FilterDatePreset } from "@/types/search.types";
+import type { DateFilter, FilterDatePreset } from "@/constants/types/search.types";
 
 export const PRESETS: FilterDatePreset[] = [
   "TODAY",
@@ -20,17 +20,9 @@ export const PRESETS: FilterDatePreset[] = [
   "CUSTOM",
 ];
 
-type DateChange = {
-  preset: FilterDatePreset;
-  customFrom?: string;
-  customTo?: string;
-};
-
 type DateFilterSectionProps = {
-  preset: FilterDatePreset;
-  customFrom?: string;
-  customTo?: string;
-  onChange: (next: DateChange) => void;
+  value: DateFilter;
+  onChange: (next: DateFilter) => void;
   onClear: () => void;
   defaultOpen?: boolean;
 };
@@ -43,24 +35,34 @@ function toInputValue(iso: string | undefined): string {
 }
 
 export function DateFilterSection({
-  preset,
-  customFrom,
-  customTo,
+  value,
   onChange,
   onClear,
   defaultOpen,
 }: DateFilterSectionProps) {
+  const preset = value.preset;
+  const customFrom = value.preset === "CUSTOM" ? value.from : undefined;
+  const customTo = value.preset === "CUSTOM" ? value.to : undefined;
   const isCustom = preset === "CUSTOM";
 
   // ponytail: the datetime-local value is a bare "2026-01-05T14:30" that the
   // browser treats as local — new Date() keeps it local, so toISOString()
   // lands on the right UTC instant with no day shift.
-  const setBound = (key: "customFrom" | "customTo", value: string) =>
+  const setBound = (key: "from" | "to", inputValue: string) =>
     onChange({
-      preset,
-      customFrom,
-      customTo,
-      [key]: value ? toUtcIsoString(value) : undefined,
+      preset: "CUSTOM",
+      from:
+        key === "from"
+          ? inputValue
+            ? toUtcIsoString(inputValue)
+            : (customFrom ?? new Date().toISOString())
+          : (customFrom ?? new Date().toISOString()),
+      to:
+        key === "to"
+          ? inputValue
+            ? toUtcIsoString(inputValue)
+            : (customTo ?? new Date().toISOString())
+          : (customTo ?? new Date().toISOString()),
     });
 
   return (
@@ -79,8 +81,8 @@ export function DateFilterSection({
                     p === "CUSTOM"
                       ? {
                           preset: p,
-                          customFrom,
-                          customTo,
+                          from: customFrom ?? new Date().toISOString(),
+                          to: customTo ?? new Date().toISOString(),
                         }
                       : { preset: p },
                   )
@@ -96,7 +98,7 @@ export function DateFilterSection({
               <Input
                 type="datetime-local"
                 value={toInputValue(customFrom)}
-                onChange={(e) => setBound("customFrom", e.target.value)}
+                onChange={(e) => setBound("from", e.target.value)}
               />
             </label>
             <label className="space-y-1">
@@ -104,7 +106,7 @@ export function DateFilterSection({
               <Input
                 type="datetime-local"
                 value={toInputValue(customTo)}
-                onChange={(e) => setBound("customTo", e.target.value)}
+                onChange={(e) => setBound("to", e.target.value)}
               />
             </label>
           </div>

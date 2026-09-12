@@ -1,5 +1,9 @@
 import { apiRequest } from "@/lib/api/client";
-import type { CategoryItem, CreateExpensePayload, ExpenseItem } from "@/types/expense.types";
+import type {
+  CategoryItem,
+  CreateExpensePayload,
+  ExpenseItem,
+} from "@/constants/types/expense.types";
 import type {
   CategoryBreakdownPoint,
   CategoryRangeStats,
@@ -10,7 +14,7 @@ import type {
   DistributionPoint,
   ExpenseContribution,
   CategoryItem as CategoryItemAanlytics,
-} from "@/types/analytics.types";
+} from "@/constants/types/analytics.types";
 import type {
   CategoryFilterCriteria,
   CategorySearchRequest,
@@ -19,7 +23,7 @@ import type {
   ExpenseSearchRequest,
   SearchResult,
   SortCriteria,
-} from "@/types/search.types";
+} from "@/constants/types/search.types";
 
 export const expensesApi = {
   searchExpenses: (request: ExpenseSearchRequest) =>

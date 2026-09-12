@@ -1,18 +1,20 @@
 "use client";
 
+import { Skeleton } from "@/components/ui/skeleton";
+
+// ponytail: the one skeleton pattern for every chart.
 export function ChartSkeleton() {
   return (
-    <div className="h-64 space-y-3 p-4">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full animate-pulse">
-        <polyline
-          points="0,80 12,70 24,78 38,52 52,66 66,30 80,58 100,42"
-          fill="none"
-          stroke="var(--color-surface-muted)"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+    <div
+      role="status"
+      aria-label="Loading chart"
+      className="flex h-64 w-full items-end justify-around sm:h-[280px]"
+    >
+      {[60, 80, 45, 90, 55, 70, 85].map((h, i) => (
+        <div key={i} className="w-4" style={{ height: `${h}%` }}>
+          <Skeleton className="h-full w-full rounded-sm" />
+        </div>
+      ))}
     </div>
   );
 }

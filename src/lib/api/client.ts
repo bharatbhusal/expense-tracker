@@ -1,4 +1,4 @@
-import type { ApiRequestOptions, ApiResponse } from "@/types/api.types";
+import type { ApiRequestOptions, ApiResponse } from "@/constants/types/api.types";
 
 class ApiClientError extends Error {
   status: number;

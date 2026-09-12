@@ -1,4 +1,4 @@
-import { BucketsPage } from "@/features/settings/components/buckets-page";
+import { BucketsPage } from "@/features/buckets/buckets-page";
 
 export const metadata = { title: "Buckets" };
 

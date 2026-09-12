@@ -1,4 +1,4 @@
-import { BudgetsPage } from "@/features/budgets/components/budgets-page";
+import { BudgetsPage } from "@/features/budgets/budgets-page";
 
 export const metadata = { title: "Budgets" };
 

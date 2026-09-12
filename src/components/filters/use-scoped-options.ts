@@ -4,27 +4,20 @@ import { useEffect, useState } from "react";
 
 import { bucketsApi } from "@/lib/api/buckets";
 import { expensesApi } from "@/lib/api/expenses";
-import type { BucketMemberWithName, BucketSummary } from "@/types/bucket.types";
+import type { BucketMemberWithName, BucketSummary } from "@/constants/types/bucket.types";
 import { scopedCategoryRequest } from "@/lib/filters";
-import type { CategoryItem } from "@/types/expense.types";
-import type { BucketPreset } from "@/types/search.types";
+import type { CategoryItem } from "@/constants/types/expense.types";
+import type { BucketSelection } from "@/constants/types/search.types";
 import type { FilterOwner } from "./owner-filter-section";
 
 export function selectedBuckets(
   buckets: BucketSummary[],
-  preset: BucketPreset | undefined,
-  bucketIds: string[] | undefined,
+  selection: BucketSelection | undefined,
 ): BucketSummary[] {
-  // ponytail: keep preset compat for legacy callers; new nested list uses ids-only
-  if (preset === "PERSONAL") return buckets.filter((b) => b.isPersonal);
-  if (preset === "MULTIPLE") {
-    if (!bucketIds || bucketIds.length === 0) return buckets;
-    return buckets.filter((b) => bucketIds.includes(b._id));
-  }
-  if (preset === "ALL") return buckets;
-  // ids-only (preset undefined): empty = all
-  if (!bucketIds || bucketIds.length === 0) return buckets;
-  return buckets.filter((b) => bucketIds.includes(b._id));
+  if (!selection || selection.preset === "ALL") return buckets;
+  if (selection.preset === "PERSONAL") return buckets.filter((b) => b.isPersonal);
+  if (selection.ids.length === 0) return buckets;
+  return buckets.filter((b) => selection.ids.includes(b._id));
 }
 
 function dedupeById<T extends { _id: string }>(items: T[]): T[] {
@@ -38,8 +31,7 @@ function dedupeById<T extends { _id: string }>(items: T[]): T[] {
 export function useScopedOptions(
   enabled: boolean,
   buckets: BucketSummary[],
-  preset: BucketPreset | undefined,
-  bucketIds: string[] | undefined,
+  selection: BucketSelection | undefined,
 ): {
   categories: CategoryItem[];
   owners: FilterOwner[];
@@ -53,7 +45,7 @@ export function useScopedOptions(
     owners: FilterOwner[];
   }>({ key: null, categories: [], categoriesByBucket: {}, owners: [] });
 
-  const scopedIds = selectedBuckets(buckets, preset, bucketIds)
+  const scopedIds = selectedBuckets(buckets, selection)
     .map((b) => b._id)
     .sort()
     .join(",");

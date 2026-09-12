@@ -1,4 +1,4 @@
-import type { CloudinaryTransform } from "@/types/upload.types";
+import type { CloudinaryTransform } from "@/constants/types/upload.types";
 
 export function buildCloudinaryUrl(
   publicId: string,

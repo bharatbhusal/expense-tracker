@@ -1,12 +1,11 @@
 import { getAuthPayload } from "@/lib/auth";
-import { getCurrentUserService, logoutUserService } from "@/services/user.service";
+import userService from "@/services/user.service";
 
-export async function getCurrentUser() {
+async function getAuthUser() {
   const auth = await getAuthPayload();
-  return getCurrentUserService(auth.userId);
+  return userService.getCurrentUser(auth.id);
 }
 
-export async function logoutUser() {
-  const auth = await getAuthPayload();
-  return logoutUserService(auth.userId);
-}
+const userController = { getAuthUser };
+
+export default userController;

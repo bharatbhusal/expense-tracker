@@ -2,22 +2,22 @@ import type { UnknownAction } from "@reduxjs/toolkit";
 
 import * as filtersSlice from "@/store/slices/filtersSlice";
 import type {
-  BucketPreset,
-  CategoryPreset,
+  BucketSelection,
+  CategorySelection,
+  DateFilter,
   ExpenseFilterCriteria,
-  FilterDatePreset,
-  OwnerPreset,
+  OwnerSelection,
   PaginationCriteria,
   SortCriteria,
   SortDirection,
-} from "@/types/search.types";
+} from "@/constants/types/search.types";
 import type { SortField } from "./sort-section";
 
 export type FilterVariant =
   "expenses" | "expense" | "categories" | "category" | "buckets" | "bucket" | "logs";
 
 export type DraftCriteria = Partial<ExpenseFilterCriteria> & {
-  datePreset: FilterDatePreset;
+  date: DateFilter;
 };
 
 export type FilterValue = {
@@ -30,14 +30,10 @@ export type FilterSliceState = FilterValue & {
 };
 
 type FilterActions = {
-  setBucketFilter?: (p: { preset: BucketPreset; ids: string[] }) => UnknownAction;
-  setCategoryFilter?: (p: { preset: CategoryPreset; ids: string[] }) => UnknownAction;
-  setOwnerFilter?: (p: { preset: OwnerPreset; ids: string[] }) => UnknownAction;
-  setDateFilter?: (p: {
-    preset: FilterDatePreset;
-    customFrom?: string;
-    customTo?: string;
-  }) => UnknownAction;
+  setBucketFilter?: (p: { preset: BucketSelection["preset"]; ids: string[] }) => UnknownAction;
+  setCategoryFilter?: (p: { preset: CategorySelection["preset"]; ids: string[] }) => UnknownAction;
+  setOwnerFilter?: (p: { preset: OwnerSelection["preset"]; ids: string[] }) => UnknownAction;
+  setDateFilter?: (p: { date: DateFilter }) => UnknownAction;
   setSort?: (p: { field: string; direction: SortDirection }) => UnknownAction;
   setSearch?: (p: string | undefined) => UnknownAction;
   setHasNotes?: (p: boolean | undefined) => UnknownAction;

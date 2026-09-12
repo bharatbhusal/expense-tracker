@@ -1,4 +1,4 @@
-import { DashboardOverview } from "@/features/dashboard/components/dashboard-overview";
+import { DashboardOverview } from "@/features/dashboard/dashboard-overview";
 
 export const metadata = { title: "Dashboard" };
 

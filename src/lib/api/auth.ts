@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
-import type { AuthUser, LoginPayload, SignupPayload } from "@/types/auth.types";
+import type { AuthUser, LoginPayload, SignupPayload } from "@/constants/types/auth.types";
 
 export const authApi = {
   login: (input: LoginPayload) =>

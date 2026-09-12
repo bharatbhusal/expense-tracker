@@ -2,16 +2,16 @@ import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type {
   AuditFilterCriteria,
   BucketFilterCriteria,
-  BucketPreset,
+  BucketSelection,
   CategoryFilterCriteria,
-  CategoryPreset,
+  CategorySelection,
+  DateFilter,
   ExpenseFilterCriteria,
-  FilterDatePreset,
-  OwnerPreset,
+  OwnerSelection,
   PaginationCriteria,
   SortCriteria,
   SortDirection,
-} from "@/types/search.types";
+} from "@/constants/types/search.types";
 
 export type FilterVariant =
   "expenses" | "expense" | "categories" | "category" | "buckets" | "bucket" | "logs";
@@ -37,33 +37,26 @@ export type FiltersByVariant = {
 };
 
 const defaultExpenseCriteria: ExpenseFilterCriteria = {
-  bucketPreset: "ALL",
-  bucketIds: [],
-  categoryPreset: "ALL",
-  categoryIds: [],
-  ownerPreset: "ALL",
-  ownerIds: [],
-  datePreset: "THIS_MONTH",
+  bucket: { preset: "ALL" },
+  category: { preset: "ALL" },
+  owner: { preset: "ALL" },
+  date: { preset: "THIS_MONTH" },
 };
 
 const defaultCategoryCriteria: CategoryFilterCriteria = {
-  bucketPreset: "ALL",
-  bucketIds: [],
-  ownerPreset: "ALL",
-  ownerIds: [],
-  datePreset: "THIS_MONTH",
+  bucket: { preset: "ALL" },
+  owner: { preset: "ALL" },
+  date: { preset: "THIS_MONTH" },
 };
 
 const defaultBucketCriteria: BucketFilterCriteria = {
-  datePreset: "THIS_MONTH",
+  date: { preset: "THIS_MONTH" },
 };
 
 const defaultAuditCriteria: AuditFilterCriteria = {
-  bucketPreset: "ALL",
-  bucketIds: [],
-  ownerPreset: "ALL",
-  ownerIds: [],
-  datePreset: "THIS_MONTH",
+  bucket: { preset: "ALL" },
+  owner: { preset: "ALL" },
+  date: { preset: "THIS_MONTH" },
 };
 
 const defaultPagination: PaginationCriteria = { page: 1, pageSize: 20 };
@@ -88,6 +81,14 @@ function sortFor(variant: FilterVariant): SortCriteria {
     default:
       return { field: "paidAt", direction: "DESC" };
   }
+}
+
+function selectionFor(
+  preset: BucketSelection["preset"] | CategorySelection["preset"] | OwnerSelection["preset"],
+  ids: string[],
+): BucketSelection | CategorySelection | OwnerSelection {
+  if (preset === "MULTIPLE") return { preset, ids } as BucketSelection;
+  return { preset } as BucketSelection;
 }
 
 export const initialFiltersState: FiltersByVariant = {
@@ -137,62 +138,55 @@ const filtersSlice = createSlice({
       state,
       action: PayloadAction<{
         variant: FilterVariant;
-        preset: BucketPreset;
+        preset: BucketSelection["preset"];
         ids: string[];
       }>,
     ) {
       const v = action.payload.variant;
       const s: any = (state as any)[v];
-      if (!s || (s.filterCriteria.bucketPreset === undefined && v === "buckets")) return;
-      s.filterCriteria.bucketPreset = action.payload.preset;
-      s.filterCriteria.bucketIds = action.payload.ids;
+      if (!s || !("bucket" in s.filterCriteria)) return;
+      s.filterCriteria.bucket = selectionFor(action.payload.preset, action.payload.ids);
       s.pagination.page = 1;
     },
     setCategoryFilter(
       state,
       action: PayloadAction<{
         variant: FilterVariant;
-        preset: CategoryPreset;
+        preset: CategorySelection["preset"];
         ids: string[];
       }>,
     ) {
       const v = action.payload.variant;
       const s: any = (state as any)[v];
-      if (!s || s.filterCriteria.categoryPreset === undefined) return;
-      s.filterCriteria.categoryPreset = action.payload.preset;
-      s.filterCriteria.categoryIds = action.payload.ids;
+      if (!s || !("category" in s.filterCriteria)) return;
+      s.filterCriteria.category = selectionFor(action.payload.preset, action.payload.ids);
       s.pagination.page = 1;
     },
     setOwnerFilter(
       state,
       action: PayloadAction<{
         variant: FilterVariant;
-        preset: OwnerPreset;
+        preset: OwnerSelection["preset"];
         ids: string[];
       }>,
     ) {
       const v = action.payload.variant;
       const s: any = (state as any)[v];
-      if (!s) return;
-      s.filterCriteria.ownerPreset = action.payload.preset;
-      s.filterCriteria.ownerIds = action.payload.ids;
+      if (!s || !("owner" in s.filterCriteria)) return;
+      s.filterCriteria.owner = selectionFor(action.payload.preset, action.payload.ids);
       s.pagination.page = 1;
     },
     setDateFilter(
       state,
       action: PayloadAction<{
         variant: FilterVariant;
-        preset: FilterDatePreset;
-        customFrom?: string;
-        customTo?: string;
+        date: DateFilter;
       }>,
     ) {
       const v = action.payload.variant;
       const s: any = (state as any)[v];
-      if (!s) return;
-      s.filterCriteria.datePreset = action.payload.preset;
-      s.filterCriteria.customFrom = action.payload.customFrom;
-      s.filterCriteria.customTo = action.payload.customTo;
+      if (!s || !("date" in s.filterCriteria)) return;
+      s.filterCriteria.date = action.payload.date;
       s.pagination.page = 1;
     },
     setSort(
@@ -221,16 +215,8 @@ const filtersSlice = createSlice({
     ) {
       const v = action.payload.variant;
       const s: any = (state as any)[v];
-      if (!s || (s.filterCriteria.hasNotes === undefined && action.payload.value === undefined)) {
-        // allow even if not present
-      }
-      if (s.filterCriteria.hasNotes !== undefined || action.payload.value !== undefined) {
-        // only expense-like variants have hasNotes
-        if ("hasNotes" in s.filterCriteria || action.payload.value !== undefined) {
-          s.filterCriteria.hasNotes = action.payload.value;
-          s.pagination.page = 1;
-        }
-      } else if (v === "expenses" || v === "expense" || v === "category" || v === "bucket") {
+      if (!s) return;
+      if (v === "expenses" || v === "expense" || v === "category" || v === "bucket") {
         (s.filterCriteria as any).hasNotes = action.payload.value;
         s.pagination.page = 1;
       }
@@ -257,47 +243,38 @@ const filtersSlice = createSlice({
     clearBucketFilter(state, action: PayloadAction<{ variant: FilterVariant }>) {
       const v = action.payload.variant;
       const s: any = (state as any)[v];
-      if (!s || (s.filterCriteria.bucketPreset === undefined && v === "buckets")) return;
-      s.filterCriteria.bucketPreset = "ALL";
+      if (!s || !("bucket" in s.filterCriteria)) return;
       // personal default was previous clear -> now ALL for generic
       if (v === "expenses" || v === "expense" || v === "category" || v === "bucket") {
-        s.filterCriteria.bucketPreset = "PERSONAL";
+        s.filterCriteria.bucket = { preset: "PERSONAL" };
+      } else {
+        s.filterCriteria.bucket = { preset: "ALL" };
       }
-      s.filterCriteria.bucketIds = [];
       s.pagination.page = 1;
     },
     clearCategoryFilter(state, action: PayloadAction<{ variant: FilterVariant }>) {
       const v = action.payload.variant;
       const s: any = (state as any)[v];
-      if (!s || s.filterCriteria.categoryPreset === undefined) return;
-      s.filterCriteria.categoryPreset = "ALL";
-      s.filterCriteria.categoryIds = [];
+      if (!s || !("category" in s.filterCriteria)) return;
+      s.filterCriteria.category = { preset: "ALL" };
       s.pagination.page = 1;
     },
     clearOwnerFilter(state, action: PayloadAction<{ variant: FilterVariant }>) {
       const v = action.payload.variant;
       const s: any = (state as any)[v];
-      if (!s || s.filterCriteria.ownerPreset === undefined) return;
+      if (!s || !("owner" in s.filterCriteria)) return;
       if (v === "buckets") {
-        s.filterCriteria.ownerPreset = undefined;
-        s.filterCriteria.ownerIds = undefined;
+        s.filterCriteria.owner = undefined;
       } else {
-        s.filterCriteria.ownerPreset = "ALL";
-        // per-variant: keep ME for some? use ALL generic
-        if (v === "expenses" || v === "expense" || v === "category" || v === "bucket") {
-          // keep previous semantics: logs/categories had ME vs ALL differences but now uniform
-        }
-        s.filterCriteria.ownerIds = [];
+        s.filterCriteria.owner = { preset: "ALL" };
       }
       s.pagination.page = 1;
     },
     clearDateFilter(state, action: PayloadAction<{ variant: FilterVariant }>) {
       const v = action.payload.variant;
       const s: any = (state as any)[v];
-      if (!s) return;
-      s.filterCriteria.datePreset = "THIS_MONTH";
-      s.filterCriteria.customFrom = undefined;
-      s.filterCriteria.customTo = undefined;
+      if (!s || !("date" in s.filterCriteria)) return;
+      s.filterCriteria.date = { preset: "THIS_MONTH" };
       s.pagination.page = 1;
     },
     clearSort(state, action: PayloadAction<{ variant: FilterVariant }>) {

@@ -7,9 +7,11 @@ type StatCardProps = {
 
 export function StatCard({ title, value }: StatCardProps) {
   return (
-    <Card key={title} className="min-w-[100px] flex-1">
-      <p className="truncate text-xs text-[var(--color-muted)]">{title}</p>
-      <p className="truncate font-medium tabular-nums">{value}</p>
+    <Card key={title} className="min-w-[140px] flex-1">
+      <dl>
+        <dt className="text-xs text-[var(--color-muted)]">{title}</dt>
+        <dd className="font-medium break-words tabular-nums">{value}</dd>
+      </dl>
     </Card>
   );
 }

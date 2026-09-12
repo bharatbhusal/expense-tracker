@@ -23,7 +23,7 @@ export default function MainLayout({
           paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem)",
         }}
       >
-        <div className="h-full mx-auto max-w-5xl px-2">{children}</div>
+        <div className="h-full mx-auto max-w-5xl safe-area-px">{children}</div>
       </div>
       <BottomNav />
     </div>

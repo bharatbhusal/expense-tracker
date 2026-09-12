@@ -1,4 +1,4 @@
-import { ExpenseForm } from "@/features/expenses/components/expense-form";
+import { ExpenseForm } from "@/features/expenses/expense-form";
 
 export const metadata = {
   title: "Edit Expense",

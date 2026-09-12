@@ -82,17 +82,9 @@ export function toIsoBounds(range: GlobalDateRange): {
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
-export type FilterDatePreset =
-  | "TODAY"
-  | "YESTERDAY"
-  | "THIS_WEEK"
-  | "LAST_WEEK"
-  | "THIS_MONTH"
-  | "LAST_MONTH"
-  | "LAST_6_MONTHS"
-  | "THIS_YEAR"
-  | "LAST_YEAR"
-  | "CUSTOM";
+import type { DateFilter, FilterDatePreset } from "@/constants/types/search.types";
+
+export type { FilterDatePreset };
 
 const FILTER_PRESET_LABELS: Record<FilterDatePreset, string> = {
   TODAY: "Today",
@@ -155,6 +147,15 @@ function startOfMonth(year: number, month: number): Date {
 
 function endOfMonth(year: number, month: number): Date {
   return new Date(year, month + 1, 0, 23, 59, 59, 999);
+}
+
+// ponytail: union-first entry point — resource builders pass filter.date straight through.
+export function resolveDateRange(date?: DateFilter): { from?: string; to?: string } | null {
+  if (!date) return null;
+  if (date.preset === "CUSTOM") {
+    return { from: new Date(date.from).toISOString(), to: new Date(date.to).toISOString() };
+  }
+  return toIsoBoundsForPreset(date.preset);
 }
 
 export function toIsoBoundsForPreset(

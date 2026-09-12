@@ -4,12 +4,12 @@ import type {
   CategoryBreakdownPoint,
   CategoryItem as CategoryItemAanlytics,
   CategoryWithStats,
-} from "@/types/analytics.types";
+} from "@/constants/types/analytics.types";
 import type {
   CategoryFilterCriteria,
   ExpenseFilterCriteria,
   SortCriteria,
-} from "@/types/search.types";
+} from "@/constants/types/search.types";
 import type { RootState } from "@/store";
 
 type CategoryState = {

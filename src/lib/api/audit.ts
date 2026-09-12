@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
-import type { AuditSearchRequest, SearchResult } from "@/types/search.types";
+import type { AuditSearchRequest, SearchResult } from "@/constants/types/search.types";
 
 export type AuditLogItem = {
   _id: string;

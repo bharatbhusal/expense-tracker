@@ -2,17 +2,10 @@ import { Types } from "mongoose";
 
 import { buildAuditQuery } from "@/lib/query-builders";
 import { AuditLogModel } from "@/models/AuditLog";
-import type { AuditSearchRequest } from "@/types/search.types";
+import type { AuditSearchRequest } from "@/constants/types/search.types";
+import type { AuditLogType } from "@/constants/types/audit.types";
 
-export async function createAuditLog(input: {
-  actorId: string;
-  bucketId?: string;
-  action: string;
-  entity: string;
-  entityId?: string;
-  note?: string;
-  metadata?: Record<string, unknown>;
-}) {
+async function createAuditLog(input: AuditLogType) {
   const log = await AuditLogModel.create({
     ...input,
     timestamp: new Date(),
@@ -51,7 +44,7 @@ function toAuditItem(log: Record<string, unknown>) {
   };
 }
 
-export async function searchAuditLogs(userId: string, request: AuditSearchRequest) {
+async function searchAuditLogs(userId: string, request: AuditSearchRequest) {
   const { query, sort, skip, limit } = await buildAuditQuery(userId, request);
 
   const [logs, total] = await Promise.all([
@@ -72,3 +65,10 @@ export async function searchAuditLogs(userId: string, request: AuditSearchReques
     totalPages: Math.ceil(total / request.pagination.pageSize) || 1,
   };
 }
+
+const auditRepository = {
+  createAuditLog,
+  searchAuditLogs,
+};
+
+export default auditRepository;

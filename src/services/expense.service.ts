@@ -1,52 +1,44 @@
-import { Types } from "mongoose";
-
 import { AppError } from "@/lib/errors";
 import {
-  chartOverviewSchema,
-  distributionSchema,
-  expenseSchema,
-  expenseSearchSchema,
-} from "@/lib/validators";
-import { toIsoBoundsForPreset } from "@/lib/date-range";
+  BUCKET_ERRORS,
+  CATEGORY_ERRORS,
+  ERROR_CODES,
+  EXPENSE_ERRORS,
+  USER_ERRORS,
+} from "@/constants/error-messages";
+import { chartOverviewSchema, expenseSchema, expenseSearchSchema } from "@/lib/validators";
+import { resolveDateRange } from "@/lib/date-range";
 import { buildExpenseQuery } from "@/lib/query-builders";
 import { getValidBuckets } from "@/lib/query-builders/membership";
+import expenseRepository from "@/repositories/expense.repository";
 import {
-  createExpense,
-  deleteExpense,
-  getDistribution,
-  getExpenseByIdForMember,
-  getExpenseContribution,
-  getExpenseOverviewStats,
-  getChartData,
-  searchExpenses,
-  updateExpense,
-} from "@/repositories/expense.repository";
-import { ensureCategoryInBucket, getCategoryById } from "@/repositories/category.repository";
-import { findBucketById } from "@/repositories/bucket.repository";
-import { findUserById } from "@/repositories/user.repository";
+  categoryExistsInBucket,
+  ensureCategoryInBucket,
+  getCategoryById,
+} from "@/repositories/category.repository";
+import { findBucketById, isMember } from "@/repositories/bucket.repository";
 import { logAuditEvent } from "@/services/audit.service";
-import type { ExpenseSearchRequest } from "@/types/search.types";
-
-export async function createExpenseService(userId: string, body: unknown) {
+import type { ExpenseSearchRequest } from "@/constants/types/search.types";
+import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "@/constants/types/audit.types";
+import { AuthUser } from "@/constants/types/auth.types";
+async function createExpense(authUser: AuthUser, body: unknown) {
   const payload = expenseSchema.parse(body);
 
-  const validBuckets = await getValidBuckets(userId);
-  if (!validBuckets.map((id) => id.toString()).includes(payload.bucketId)) {
-    throw new AppError("Not a member of this bucket", 403, "NOT_A_MEMBER");
+  const [validBucket, categoryExists] = await Promise.all([
+    isMember(authUser.id, payload.bucketId),
+    categoryExistsInBucket(payload.categoryId, payload.bucketId),
+  ]);
+
+  if (!validBucket) {
+    throw new AppError(BUCKET_ERRORS.NOT_MEMBER, 403, ERROR_CODES.NOT_A_MEMBER);
   }
 
-  const existing = await findUserById(userId);
-  if (!existing) {
-    throw new AppError("User doesn't exist", 409, "USER_DOESN'T_EXIST");
+  if (!categoryExists) {
+    throw new AppError(CATEGORY_ERRORS.NOT_IN_BUCKET, 400, ERROR_CODES.CATEGORY_NOT_IN_BUCKET);
   }
 
-  const category = await getCategoryById(payload.categoryId, payload.bucketId);
-  if (!category) {
-    throw new AppError("Category does not belong to this bucket", 400, "CATEGORY_NOT_IN_BUCKET");
-  }
-
-  const expense = await createExpense({
-    userId,
+  const expense = await expenseRepository.createExpense({
+    userId: authUser.id,
     bucketId: payload.bucketId,
     title: payload.title,
     amount: payload.amount,
@@ -55,14 +47,14 @@ export async function createExpenseService(userId: string, body: unknown) {
     images: payload.images,
     location: payload.location,
     currency: payload.currency,
-    paidAt: payload?.paidAt ? new Date(payload.paidAt) : undefined,
+    paidAt: payload.paidAt ? new Date(payload.paidAt) : undefined,
   });
 
   await logAuditEvent({
-    actorId: userId,
+    actorId: authUser.id,
     bucketId: payload.bucketId,
-    action: "create",
-    entity: "expense",
+    action: AUDIT_ACTIONS.CREATE,
+    entity: AUDIT_ENTITIES.EXPENSE,
     entityId: expense._id.toString(),
     note: `Created expense "${expense.title}"`,
     metadata: { amount: expense.amount },
@@ -71,38 +63,38 @@ export async function createExpenseService(userId: string, body: unknown) {
   return expense;
 }
 
-export async function getExpenseService(userId: string, expenseId: string) {
+async function getExpense(userId: string, expenseId: string) {
   const validBuckets = await getValidBuckets(userId);
-  const expense = await getExpenseByIdForMember(expenseId, validBuckets);
+  const expense = await expenseRepository.getExpenseByIdForMember(expenseId, validBuckets);
   if (!expense) {
-    throw new AppError("Expense not found", 404, "NOT_FOUND");
+    throw new AppError(EXPENSE_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   return expense;
 }
 
-export async function updateExpenseService(userId: string, expenseId: string, body: unknown) {
+async function updateExpense(userId: string, expenseId: string, body: unknown) {
   const payload = expenseSchema.partial().parse(body);
 
   const validBuckets = await getValidBuckets(userId);
-  const current = await getExpenseByIdForMember(expenseId, validBuckets);
+  const current = await expenseRepository.getExpenseByIdForMember(expenseId, validBuckets);
   if (!current) {
-    throw new AppError("Expense not found", 404, "NOT_FOUND");
+    throw new AppError(EXPENSE_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   if (current.userId.toString() !== userId) {
-    throw new AppError("Only the owner can update this expense", 403, "NOT_OWNER");
+    throw new AppError(EXPENSE_ERRORS.NOT_OWNER_UPDATE, 403, ERROR_CODES.NOT_OWNER);
   }
 
   const targetBucketId = payload.bucketId ? String(payload.bucketId) : current.bucketId.toString();
 
   if (payload.bucketId && !validBuckets.map((id) => id.toString()).includes(targetBucketId)) {
-    throw new AppError("Not a member of this bucket", 403, "NOT_A_MEMBER");
+    throw new AppError(BUCKET_ERRORS.NOT_MEMBER, 403, ERROR_CODES.NOT_A_MEMBER);
   }
 
   let categoryId: string;
   if (payload.categoryId) {
     const category = await getCategoryById(payload.categoryId, targetBucketId);
     if (!category) {
-      throw new AppError("Category does not belong to this bucket", 400, "CATEGORY_NOT_IN_BUCKET");
+      throw new AppError(CATEGORY_ERRORS.NOT_IN_BUCKET, 400, ERROR_CODES.CATEGORY_NOT_IN_BUCKET);
     }
     categoryId = category._id.toString();
   } else if (targetBucketId === current.bucketId.toString()) {
@@ -110,7 +102,11 @@ export async function updateExpenseService(userId: string, expenseId: string, bo
   } else {
     const sourceCategory = await getCategoryById(current.categoryId, current.bucketId.toString());
     if (!sourceCategory) {
-      throw new AppError("Source category not found", 400, "CATEGORY_NOT_IN_BUCKET");
+      throw new AppError(
+        EXPENSE_ERRORS.SOURCE_CATEGORY_NOT_FOUND,
+        400,
+        ERROR_CODES.CATEGORY_NOT_IN_BUCKET,
+      );
     }
     const destCategory = await ensureCategoryInBucket(userId, targetBucketId, {
       name: sourceCategory.name,
@@ -120,13 +116,13 @@ export async function updateExpenseService(userId: string, expenseId: string, bo
     categoryId = destCategory._id.toString();
   }
 
-  const expense = await updateExpense(userId, expenseId, {
+  const expense = await expenseRepository.updateExpense(userId, expenseId, {
     ...payload,
     categoryId,
     bucketId: targetBucketId,
   });
   if (!expense) {
-    throw new AppError("Expense not found", 404, "NOT_FOUND");
+    throw new AppError(EXPENSE_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
 
   if (payload.bucketId && payload.bucketId !== current.bucketId.toString()) {
@@ -137,7 +133,7 @@ export async function updateExpenseService(userId: string, expenseId: string, bo
     await logAuditEvent({
       actorId: userId,
       bucketId: sourceId,
-      action: "move-out",
+      action: AUDIT_ACTIONS.OUT,
       entity: "expense",
       entityId: expenseId,
       note: `Moved expense "${expense.title}" to ${destName}`,
@@ -145,7 +141,7 @@ export async function updateExpenseService(userId: string, expenseId: string, bo
     await logAuditEvent({
       actorId: userId,
       bucketId: destId,
-      action: "move-in",
+      action: AUDIT_ACTIONS.IN,
       entity: "expense",
       entityId: expenseId,
       note: `Expense "${expense.title}" moved from ${sourceName}`,
@@ -154,7 +150,7 @@ export async function updateExpenseService(userId: string, expenseId: string, bo
     await logAuditEvent({
       actorId: userId,
       bucketId: current.bucketId.toString(),
-      action: "update",
+      action: AUDIT_ACTIONS.UPDATE,
       entity: "expense",
       entityId: expenseId,
       note: `Updated expense "${expense.title}"`,
@@ -164,53 +160,30 @@ export async function updateExpenseService(userId: string, expenseId: string, bo
   return expense;
 }
 
-export async function deleteExpenseService(userId: string, expenseId: string) {
+async function deleteExpense(userId: string, expenseId: string) {
   const validBuckets = await getValidBuckets(userId);
-  const existing = await getExpenseByIdForMember(expenseId, validBuckets);
+  const existing = await expenseRepository.getExpenseByIdForMember(expenseId, validBuckets);
   if (!existing) {
-    throw new AppError("Expense not found", 404, "NOT_FOUND");
+    throw new AppError(EXPENSE_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
   if (existing.userId.toString() !== userId) {
-    throw new AppError("Only the owner can delete this expense", 403, "NOT_OWNER");
+    throw new AppError(EXPENSE_ERRORS.NOT_OWNER_DELETE, 403, ERROR_CODES.NOT_OWNER);
   }
-  const deleted = await deleteExpense(userId, expenseId);
+  const deleted = await expenseRepository.deleteExpense(userId, expenseId);
   if (!deleted) {
-    throw new AppError("Expense not found", 404, "NOT_FOUND");
+    throw new AppError(EXPENSE_ERRORS.NOT_FOUND, 404, ERROR_CODES.NOT_FOUND);
   }
 
   await logAuditEvent({
     actorId: userId,
     bucketId: existing.bucketId.toString(),
-    action: "delete",
+    action: AUDIT_ACTIONS.DELETE,
     entity: "expense",
     entityId: expenseId,
     note: `Deleted expense "${deleted.title}"`,
   });
 
   return { message: "Expense deleted" };
-}
-
-export async function getContributionService(
-  userId: string,
-  expenseId: string,
-  from?: string,
-  to?: string,
-) {
-  const validBuckets = await getValidBuckets(userId);
-  const existing = await getExpenseByIdForMember(expenseId, validBuckets);
-  if (!existing) {
-    throw new AppError("Expense not found", 404, "NOT_FOUND");
-  }
-  const data = await getExpenseContribution(
-    expenseId,
-    existing.bucketId as unknown as Types.ObjectId,
-    from ? new Date(from) : undefined,
-    to ? new Date(to) : undefined,
-  );
-  if (!data) {
-    throw new AppError("Expense not found", 404, "NOT_FOUND");
-  }
-  return data;
 }
 
 // ponytail: overview/chart share the same parse + query-build step; both
@@ -233,7 +206,7 @@ async function chartOverviewContext(
     pagination: { page: 1, pageSize: 1 },
   });
 
-  const bounds = toIsoBoundsForPreset(filters.datePreset, filters.customFrom, filters.customTo);
+  const bounds = resolveDateRange(filters.date);
   return {
     match: query,
     from: bounds?.from ? new Date(bounds.from) : new Date(0),
@@ -241,9 +214,10 @@ async function chartOverviewContext(
   };
 }
 
-export async function getExpenseOverviewStatsService(userId: string, body: unknown) {
+async function getExpenseOverviewStats(userId: string, body: unknown) {
   const { match, from, to } = await chartOverviewContext(userId, body);
-  const { total, count, avg, min, max, categoriesCount } = await getExpenseOverviewStats(match);
+  const { total, count, avg, min, max, categoriesCount } =
+    await expenseRepository.getExpenseOverviewStats(match);
 
   const dayDiff = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -301,51 +275,43 @@ export async function getExpenseOverviewStatsService(userId: string, body: unkno
   return cards;
 }
 
-export async function getChartDataService(userId: string, body: unknown) {
+async function getChartData(userId: string, body: unknown) {
   const { match, from, to } = await chartOverviewContext(userId, body);
-  return getChartData(match, from, to);
+  return expenseRepository.getChartData(match, from, to);
 }
 
 function defaultExpenseSearchRequest(): ExpenseSearchRequest {
   return {
     filterCriteria: {
-      bucketPreset: "PERSONAL",
-      bucketIds: [],
-      categoryPreset: "ALL",
-      categoryIds: [],
-      ownerPreset: "ME",
-      ownerIds: [],
-      datePreset: "THIS_MONTH",
+      bucket: { preset: "PERSONAL" },
+      category: { preset: "ALL" },
+      owner: { preset: "ME" },
+      date: { preset: "THIS_MONTH" },
     },
     sortCriteria: { field: "paidAt", direction: "DESC" },
     pagination: { page: 1, pageSize: 20 },
   };
 }
 
-export async function searchExpensesService(userId: string, searchRequest: unknown) {
+async function searchExpenses(userId: string, searchRequest: unknown) {
   const parsed = expenseSearchSchema.parse(searchRequest ?? {});
+  const defaults = defaultExpenseSearchRequest();
   const request: ExpenseSearchRequest = {
-    filterCriteria: parsed.filterCriteria ?? defaultExpenseSearchRequest().filterCriteria,
-    sortCriteria: parsed.sortCriteria ?? defaultExpenseSearchRequest().sortCriteria,
-    pagination: parsed.pagination ?? defaultExpenseSearchRequest().pagination,
+    filterCriteria: { ...defaults.filterCriteria, ...parsed.filterCriteria },
+    sortCriteria: parsed.sortCriteria ?? defaults.sortCriteria,
+    pagination: parsed.pagination ?? defaults.pagination,
   };
-  return searchExpenses(userId, request);
+  return expenseRepository.searchExpenses(userId, request);
 }
 
-// Distributions intentionally apply only the date range plus membership scope:
-// the UI shows the whole picture and highlights the current selection, so the
-// data must not be pre-narrowed by bucket/category/owner/q/hasNotes/hasLocation.
-export async function getDistributionService(userId: string, body: unknown) {
-  const parsed = distributionSchema.parse(body ?? {});
-  const filters = parsed.filterCriteria ?? defaultExpenseSearchRequest().filterCriteria;
+const expenseService = {
+  createExpense,
+  getExpense,
+  updateExpense,
+  deleteExpense,
+  getExpenseOverviewStats,
+  getChartData,
+  searchExpenses,
+};
 
-  const bucketIds = await getValidBuckets(userId);
-  const bounds = toIsoBoundsForPreset(filters.datePreset, filters.customFrom, filters.customTo);
-
-  return getDistribution(
-    bucketIds,
-    parsed.dimension,
-    bounds?.from ? new Date(bounds.from) : undefined,
-    bounds?.to ? new Date(bounds.to) : undefined,
-  );
-}
+export default expenseService;

@@ -1,13 +1,14 @@
-import type { BucketSummary } from "@/types/bucket.types";
+import type { BucketSummary } from "@/constants/types/bucket.types";
 import type {
   AuditFilterCriteria,
   BucketFilterCriteria,
   CategoryFilterCriteria,
   CategorySearchRequest,
+  DateFilter,
   ExpenseFilterCriteria,
   ExpenseSearchRequest,
   FilterDatePreset,
-} from "@/types/search.types";
+} from "@/constants/types/search.types";
 import { SECTIONS, type FilterVariant } from "@/components/filters/variants";
 
 // per-variant omit disabled sections before API — disabled bucket/category/owner/search/additional fields are not sent
@@ -18,16 +19,13 @@ export function stripCriteriaForVariant(
   const flags = SECTIONS[variant];
   const out: Record<string, unknown> = { ...criteria };
   if (!flags.buckets) {
-    delete out.bucketPreset;
-    delete out.bucketIds;
+    delete out.bucket;
   }
   if (!flags.categories) {
-    delete out.categoryPreset;
-    delete out.categoryIds;
+    delete out.category;
   }
   if (!flags.owners) {
-    delete out.ownerPreset;
-    delete out.ownerIds;
+    delete out.owner;
   }
   if (!flags.search) delete out.q;
   if (!flags.additional) {
@@ -35,9 +33,7 @@ export function stripCriteriaForVariant(
     delete out.hasLocation;
   }
   if (!flags.date) {
-    delete out.datePreset;
-    delete out.customFrom;
-    delete out.customTo;
+    delete out.date;
   }
   return out;
 }
@@ -55,14 +51,10 @@ export function categoryCriteria(
   variant: FilterVariant = "categories",
 ): CategoryFilterCriteria {
   const base: CategoryFilterCriteria = {
-    bucketPreset: (c as any).bucketPreset ?? "ALL",
-    bucketIds: (c as any).bucketIds ?? [],
-    ownerPreset: (c as any).ownerPreset ?? "ALL",
-    ownerIds: (c as any).ownerIds ?? [],
-    datePreset: c.datePreset,
-    customFrom: c.customFrom,
-    customTo: c.customTo,
-    q: (c as any).q,
+    bucket: (c as ExpenseFilterCriteria).bucket ?? { preset: "ALL" },
+    owner: (c as ExpenseFilterCriteria).owner ?? { preset: "ALL" },
+    date: c.date,
+    q: (c as ExpenseFilterCriteria).q,
   };
   const stripped = stripCriteriaForVariant(variant, base as unknown as Record<string, unknown>);
   return stripped as unknown as CategoryFilterCriteria;
@@ -72,14 +64,12 @@ export function auditCriteria(
   c: ExpenseFilterCriteria | AuditFilterCriteria,
   variant: FilterVariant = "logs",
 ): AuditFilterCriteria {
+  const expense = c as ExpenseFilterCriteria;
+  const audit = c as AuditFilterCriteria;
   const base: AuditFilterCriteria = {
-    bucketPreset: (c as any).bucketPreset ?? "ALL",
-    bucketIds: (c as any).bucketIds ?? [],
-    ownerPreset: (c as any).ownerPreset ?? "ALL",
-    ownerIds: (c as any).ownerIds ?? [],
-    datePreset: c.datePreset,
-    customFrom: c.customFrom,
-    customTo: c.customTo,
+    bucket: expense.bucket ?? { preset: "ALL" },
+    owner: expense.owner ?? { preset: "ALL" },
+    date: audit.date ?? expense.date ?? { preset: "THIS_MONTH" },
   };
   const stripped = stripCriteriaForVariant(variant, base as unknown as Record<string, unknown>);
   return stripped as unknown as AuditFilterCriteria;
@@ -90,20 +80,10 @@ export function bucketCriteria(
   variant: FilterVariant = "buckets",
 ): BucketFilterCriteria {
   const base: BucketFilterCriteria = {
-    datePreset: c.datePreset,
-    customFrom: c.customFrom,
-    customTo: c.customTo,
-    ownerPreset: (c as any).ownerPreset,
-    ownerIds: (c as any).ownerIds,
+    date: c.date ?? { preset: "THIS_MONTH" },
+    owner: (c as ExpenseFilterCriteria).owner,
   };
   const stripped = stripCriteriaForVariant(variant, base as unknown as Record<string, unknown>);
-  delete (stripped as any).bucketPreset;
-  delete (stripped as any).bucketIds;
-  delete (stripped as any).categoryPreset;
-  delete (stripped as any).categoryIds;
-  delete (stripped as any).hasNotes;
-  delete (stripped as any).hasLocation;
-  delete (stripped as any).q;
   return stripped as unknown as BucketFilterCriteria;
 }
 
@@ -118,7 +98,8 @@ export function filterBounds(bounds: { from?: string; to?: string } | null): {
   };
 }
 
-export function chartGranularity(preset: FilterDatePreset): string {
+export function chartGranularity(date: DateFilter | FilterDatePreset): string {
+  const preset = typeof date === "string" ? date : date.preset;
   if (preset === "TODAY" || preset === "YESTERDAY") return "day";
   if (preset === "THIS_YEAR" || preset === "LAST_YEAR") return "year";
   return "month";
@@ -131,10 +112,8 @@ export function personalBucketId(buckets: BucketSummary[]): string {
 export function scopedCategoryRequest(bucketId: string): CategorySearchRequest {
   return {
     filterCriteria: {
-      bucketPreset: "MULTIPLE",
-      bucketIds: [bucketId],
-      ownerPreset: "ALL",
-      ownerIds: [],
+      bucket: { preset: "MULTIPLE", ids: [bucketId] },
+      owner: { preset: "ALL" },
     },
     sortCriteria: { field: "createdAt", direction: "DESC" },
     pagination: { page: 1, pageSize: 100 },
@@ -160,15 +139,10 @@ export function scopedExpenseRequest({
 }): ExpenseSearchRequest {
   return {
     filterCriteria: {
-      bucketPreset: bucketId ? "MULTIPLE" : "ALL",
-      bucketIds: bucketId ? [bucketId] : [],
-      categoryPreset: "MULTIPLE",
-      categoryIds: [categoryId],
-      ownerPreset: "ALL",
-      ownerIds: [],
-      datePreset: from || to ? "CUSTOM" : "THIS_MONTH",
-      customFrom: from,
-      customTo: to,
+      bucket: bucketId ? { preset: "MULTIPLE", ids: [bucketId] } : { preset: "ALL" },
+      category: { preset: "MULTIPLE", ids: [categoryId] },
+      owner: { preset: "ALL" },
+      date: from && to ? { preset: "CUSTOM", from, to } : { preset: "THIS_MONTH" },
     },
     sortCriteria: { field: "paidAt", direction: "DESC" },
     pagination: { page, pageSize },

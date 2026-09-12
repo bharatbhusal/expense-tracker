@@ -1,4 +1,4 @@
-import { ExpenseDetailView } from "@/features/expenses/components/expense-detail-view";
+import { ExpenseDetailView } from "@/features/expenses/expense-detail-view";
 
 export const metadata = {
   title: "Expense Details",

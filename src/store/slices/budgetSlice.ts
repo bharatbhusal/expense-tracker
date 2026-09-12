@@ -1,7 +1,11 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 
 import { budgetsApi } from "@/lib/api/budgets";
-import type { BudgetGroup, CreateBudgetPayload, UpdateBudgetPayload } from "@/types/budget.types";
+import type {
+  BudgetGroup,
+  CreateBudgetPayload,
+  UpdateBudgetPayload,
+} from "@/constants/types/budget.types";
 
 type BudgetState = {
   groups: BudgetGroup[];
